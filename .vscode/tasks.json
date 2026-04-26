@@ -1,0 +1,36 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "Run Pebble Emulator (Basalt)",
+            "type": "shell",
+            "command": ".\\src\\pebble\\run_emulator.ps1",
+            "problemMatcher": [],
+            "presentation": {
+                "reveal": "always",
+                "panel": "new"
+            },
+            "group": {
+                "kind": "test",
+                "isDefault": true
+            }
+        },
+        {
+            "label": "Build Pebble App",
+            "type": "shell",
+            "command": "wsl ~/.local/bin/pebble build",
+            "options": {
+                "cwd": "${workspaceFolder}/src/pebble"
+            },
+            "problemMatcher": [],
+            "presentation": {
+                "reveal": "always",
+                "panel": "shared"
+            },
+            "group": {
+                "kind": "build",
+                "isDefault": true
+            }
+        }
+    ]
+}
