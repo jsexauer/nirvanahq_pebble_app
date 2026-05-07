@@ -4,9 +4,11 @@
   "version": "1.0.0",
   "keywords": ["pebble-app"],
   "private": true,
-  "dependencies": {},
+  "dependencies": {
+    "pebble-clay": "^1.0.3"
+  },
   "pebble": {
-    "displayName": "pebble",
+    "displayName": "NirvanaHQ",
     "uuid": "e56ef65e-c519-48b7-9a8e-03122f474867",
     "sdkVersion": "3",
     "enableMultiJS": true,
@@ -15,15 +17,18 @@
       "basalt",
       "chalk",
       "diorite",
-      "emery",
-      "flint",
-      "gabbro"
+      "emery"
     ],
     "watchapp": {
       "watchface": false
     },
     "messageKeys": [
-      "dummy"
+      "AppKeyReady",
+      "AppKeyRequestTasks",
+      "AppKeyTaskCount",
+      "AppKeyTaskIndex",
+      "AppKeyTaskName",
+      "AppKeyTaskState"
     ],
     "resources": {
       "media": []
