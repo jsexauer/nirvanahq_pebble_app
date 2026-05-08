@@ -155,6 +155,66 @@ function sendTasksToWatch(tasks) {
   sendNext();
 }
 
+function createTask(name) {
+  if (!authToken) {
+    console.log("createTask: No auth token available");
+    Pebble.sendAppMessage({ 'AppKeyTaskName': 'Cannot create: no auth', 'AppKeyTaskCount': 1, 'AppKeyTaskIndex': 0 });
+    return;
+  }
+
+  console.log("createTask: Creating task -> " + name);
+
+  var ts = new Date().getTime();
+  var ts_sec = Math.floor(ts / 1000);
+  var request_id = uuidv4();
+  var task_id = uuidv4();
+
+  var payload = [{
+    "method": "task.save",
+    "id": task_id,
+    "type": 0, "_type": ts_sec, "_type_ms": ts,
+    "parentid": "", "_parentid": ts_sec, "_parentid_ms": ts,
+    "waitingfor": "", "_waitingfor": ts_sec, "_waitingfor_ms": ts,
+    "state": 0, "_state": ts_sec, "_state_ms": ts,
+    "completed": 0, "_completed": ts_sec, "_completed_ms": ts,
+    "cancelled": 0, "_cancelled": ts_sec, "_cancelled_ms": ts,
+    "seq": ts_sec, "_seq": ts_sec, "_seq_ms": ts,
+    "seqt": 0, "_seqt": ts_sec, "_seqt_ms": ts,
+    "seqp": 0, "_seqp": ts_sec, "_seqp_ms": ts,
+    "name": name, "_name": ts_sec, "_name_ms": ts,
+    "tags": "", "_tags": ts_sec, "_tags_ms": ts,
+    "note": "", "_note": ts_sec, "_note_ms": ts,
+    "ps": 0, "_ps": ts_sec, "_ps_ms": ts,
+    "etime": 0, "_etime": ts_sec, "_etime_ms": ts,
+    "energy": 0, "_energy": ts_sec, "_energy_ms": ts,
+    "startdate": "", "_startdate": ts_sec, "_startdate_ms": ts,
+    "duedate": "", "_duedate": ts_sec, "_duedate_ms": ts,
+    "recurring": "", "_recurring": ts_sec, "_recurring_ms": ts,
+    "deleted": 0, "_deleted": ts_sec, "_deleted_ms": ts
+  }];
+
+  var url = API_BASE + "/everything?&appid=" + APP_ID + "&appversion=" + APP_VERSION +
+    "&return=everything&since_ms=0" +
+    "&authtoken=" + authToken +
+    "&clienttime_ms=" + ts +
+    "&requestid=" + request_id;
+
+  var req = new XMLHttpRequest();
+  req.open('POST', url, true);
+  req.setRequestHeader("Content-Type", "application/json");
+  req.onload = function () {
+    if (req.status === 200) {
+      console.log("createTask: Task created successfully!");
+      fetchTasks();
+      Pebble.sendAppMessage({ 'AppKeyTaskCreatedSuccess': 1 });
+    } else {
+      console.log("createTask HTTP Error: " + req.status + " - " + req.responseText);
+      Pebble.sendAppMessage({ 'AppKeyTaskName': 'Create error', 'AppKeyTaskCount': 1, 'AppKeyTaskIndex': 0 });
+    }
+  };
+  req.send(JSON.stringify(payload));
+}
+
 Pebble.addEventListener('ready', function (e) {
   console.log('PebbleKit JS ready!');
   Pebble.sendAppMessage({ 'AppKeyReady': 1 });
@@ -164,5 +224,22 @@ Pebble.addEventListener('appmessage', function (e) {
   console.log('AppMessage received!');
   if (e.payload.AppKeyRequestTasks !== undefined) {
     loginAndFetch();
+  }
+  if (e.payload.AppKeyCreateTask !== undefined) {
+    createTask(e.payload.AppKeyCreateTask);
+  }
+  if (e.payload.AppKeyInitiateTaskCreation !== undefined) {
+    var watchInfo = Pebble.getActiveWatchInfo && Pebble.getActiveWatchInfo();
+    if (watchInfo && watchInfo.model && watchInfo.model.indexOf('qemu') > -1) {
+      try {
+        var devConfig = require('./dev_config.json');
+        if (devConfig && devConfig.mock_dictation) {
+          console.log("Using mock dictation from dev_config.json");
+          createTask(devConfig.mock_dictation);
+          return;
+        }
+      } catch (err) {}
+    }
+    Pebble.sendAppMessage({ 'AppKeyStartDictation': 1 });
   }
 });

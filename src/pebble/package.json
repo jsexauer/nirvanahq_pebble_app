@@ -2,7 +2,9 @@
   "name": "pebble",
   "author": "MakeAwesomeHappen",
   "version": "1.0.0",
-  "keywords": ["pebble-app"],
+  "keywords": [
+    "pebble-app"
+  ],
   "private": true,
   "dependencies": {
     "pebble-clay": "^1.0.3"
@@ -22,16 +24,30 @@
     "watchapp": {
       "watchface": false
     },
+    "capabilities": [
+      "voice"
+    ],
     "messageKeys": [
       "AppKeyReady",
       "AppKeyRequestTasks",
       "AppKeyTaskCount",
       "AppKeyTaskIndex",
       "AppKeyTaskName",
-      "AppKeyTaskState"
+      "AppKeyTaskState",
+      "AppKeyCreateTask",
+      "AppKeyInitiateTaskCreation",
+      "AppKeyStartDictation",
+      "AppKeyTaskCreatedSuccess"
     ],
     "resources": {
-      "media": []
+      "media": [
+        {
+          "type": "png",
+          "name": "IMAGE_MENU_ICON",
+          "file": "images/menu_icon.png",
+          "menuIcon": true
+        }
+      ]
     }
   }
 }

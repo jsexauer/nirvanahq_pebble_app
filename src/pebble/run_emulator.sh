@@ -6,6 +6,9 @@ EMULATOR=${1:-diorite}
 # Get directory of this script
 DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
 
+echo "Cleaning Pebble build directory..."
+cd "$DIR" && ~/.local/bin/pebble clean
+
 echo "Building Pebble app..."
 cd "$DIR" && ~/.local/bin/pebble build
 

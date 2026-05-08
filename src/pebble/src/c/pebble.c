@@ -10,13 +10,27 @@ static Window *s_tasks_window;
 static MenuLayer *s_tasks_menu_layer;
 static TextLayer *s_loading_layer;
 
-static Window *s_new_task_window;
-static TextLayer *s_new_task_text_layer;
+static Window *s_success_window;
+static TextLayer *s_success_text_layer;
+
+static DictationSession *s_dictation_session;
+static char s_dictation_text[512];
 
 static char s_tasks[MAX_TASKS][MAX_TASK_NAME_LENGTH];
 static int s_task_states[MAX_TASKS];
 static int s_num_tasks = 0;
 static bool s_is_loading = true;
+
+static void success_timer_callback(void *data);
+
+static void dictation_session_callback(DictationSession *session, DictationSessionStatus status, char *transcription, void *context) {
+  if (status == DictationSessionStatusSuccess) {
+    DictionaryIterator *iter;
+    app_message_outbox_begin(&iter);
+    dict_write_cstring(iter, MESSAGE_KEY_AppKeyCreateTask, transcription);
+    app_message_outbox_send();
+  }
+}
 
 static uint16_t tasks_menu_get_num_rows_callback(MenuLayer *menu_layer, uint16_t section_index, void *data) {
   return s_num_tasks;
@@ -44,7 +58,12 @@ static void main_menu_draw_row_callback(GContext* ctx, const Layer *cell_layer, 
 static void main_menu_select_callback(MenuLayer *menu_layer, MenuIndex *cell_index, void *data) {
   switch (cell_index->row) {
     case 0:
-      window_stack_push(s_new_task_window, true);
+      {
+        DictionaryIterator *iter;
+        app_message_outbox_begin(&iter);
+        dict_write_uint8(iter, MESSAGE_KEY_AppKeyInitiateTaskCreation, 1);
+        app_message_outbox_send();
+      }
       break;
     case 1:
       window_stack_push(s_tasks_window, true);
@@ -58,6 +77,19 @@ static void inbox_received_callback(DictionaryIterator *iterator, void *context)
   Tuple *index_tuple = dict_find(iterator, MESSAGE_KEY_AppKeyTaskIndex);
   Tuple *name_tuple = dict_find(iterator, MESSAGE_KEY_AppKeyTaskName);
   Tuple *state_tuple = dict_find(iterator, MESSAGE_KEY_AppKeyTaskState);
+  Tuple *start_dictation_tuple = dict_find(iterator, MESSAGE_KEY_AppKeyStartDictation);
+  Tuple *success_tuple = dict_find(iterator, MESSAGE_KEY_AppKeyTaskCreatedSuccess);
+
+  if (success_tuple) {
+    window_stack_push(s_success_window, true);
+    app_timer_register(2000, success_timer_callback, NULL);
+    return;
+  }
+
+  if (start_dictation_tuple) {
+    dictation_session_start(s_dictation_session);
+    return;
+  }
 
   if(ready_tuple) {
     // JS is ready, request tasks
@@ -137,18 +169,22 @@ static void tasks_window_unload(Window *window) {
   text_layer_destroy(s_loading_layer);
 }
 
-static void new_task_window_load(Window *window) {
+static void success_timer_callback(void *data) {
+  window_stack_remove(s_success_window, true);
+}
+
+static void success_window_load(Window *window) {
   Layer *window_layer = window_get_root_layer(window);
   GRect bounds = layer_get_bounds(window_layer);
 
-  s_new_task_text_layer = text_layer_create(GRect(0, bounds.size.h / 2 - 10, bounds.size.w, 20));
-  text_layer_set_text(s_new_task_text_layer, "TBD");
-  text_layer_set_text_alignment(s_new_task_text_layer, GTextAlignmentCenter);
-  layer_add_child(window_layer, text_layer_get_layer(s_new_task_text_layer));
+  s_success_text_layer = text_layer_create(GRect(0, bounds.size.h / 2 - 10, bounds.size.w, 20));
+  text_layer_set_text(s_success_text_layer, "Task Added!");
+  text_layer_set_text_alignment(s_success_text_layer, GTextAlignmentCenter);
+  layer_add_child(window_layer, text_layer_get_layer(s_success_text_layer));
 }
 
-static void new_task_window_unload(Window *window) {
-  text_layer_destroy(s_new_task_text_layer);
+static void success_window_unload(Window *window) {
+  text_layer_destroy(s_success_text_layer);
 }
 
 static void main_window_load(Window *window) {
@@ -182,11 +218,13 @@ static void init() {
     .unload = tasks_window_unload,
   });
 
-  s_new_task_window = window_create();
-  window_set_window_handlers(s_new_task_window, (WindowHandlers) {
-    .load = new_task_window_load,
-    .unload = new_task_window_unload,
+  s_success_window = window_create();
+  window_set_window_handlers(s_success_window, (WindowHandlers) {
+    .load = success_window_load,
+    .unload = success_window_unload,
   });
+
+  s_dictation_session = dictation_session_create(sizeof(s_dictation_text), dictation_session_callback, NULL);
   window_stack_push(s_main_window, true);
 
   // Register AppMessage handlers
@@ -204,7 +242,8 @@ static void init() {
 static void deinit() {
   window_destroy(s_main_window);
   window_destroy(s_tasks_window);
-  window_destroy(s_new_task_window);
+  window_destroy(s_success_window);
+  dictation_session_destroy(s_dictation_session);
 }
 
 int main(void) {
