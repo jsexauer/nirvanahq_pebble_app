@@ -216,3 +216,7 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Pebble dev config
+src/pebble/src/pkjs/dev_config.json
+dev_config.json

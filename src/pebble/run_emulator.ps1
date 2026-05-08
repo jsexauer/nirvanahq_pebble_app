@@ -1,5 +1,5 @@
 param (
-    [string]$Emulator = "diorite"
+    [string]$Emulator = "emery"
 )
 
 Write-Host "Building Pebble app..."

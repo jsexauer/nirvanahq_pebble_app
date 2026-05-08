@@ -2,7 +2,7 @@
     "version": "2.0.0",
     "tasks": [
         {
-            "label": "Run Pebble Emulator (diorite)",
+            "label": "Run Pebble Emulator",
             "type": "shell",
             "command": ".\\src\\pebble\\run_emulator.ps1",
             "problemMatcher": [],

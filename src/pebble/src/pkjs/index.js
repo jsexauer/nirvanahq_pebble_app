@@ -20,6 +20,20 @@ function loginAndFetch() {
   var username = dict.username;
   var password = dict.password;
 
+  var watchInfo = Pebble.getActiveWatchInfo && Pebble.getActiveWatchInfo();
+  if (watchInfo && watchInfo.model && watchInfo.model.indexOf('qemu') > -1) {
+    try {
+      var devConfig = require('./dev_config.json');
+      if (devConfig && devConfig.username && devConfig.password) {
+        username = devConfig.username;
+        password = devConfig.password;
+        console.log("Using credentials from dev_config.json (Emulator mode)");
+      }
+    } catch (e) {
+      console.log("Could not load dev_config.json");
+    }
+  }
+
   if (!username || !password) {
     console.log("No credentials provided");
     Pebble.sendAppMessage({ 'AppKeyTaskName': 'Please login in settings', 'AppKeyTaskCount': 1, 'AppKeyTaskIndex': 0 });
