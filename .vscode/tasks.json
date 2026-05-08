@@ -17,6 +17,18 @@
             }
         },
         {
+            "label": "Hard Reset Pebble Emulator",
+            "type": "shell",
+            "command": ".\\src\\pebble\\run_emulator_hard_reset.ps1",
+            "problemMatcher": [],
+            "presentation": {
+                "reveal": "always",
+                "panel": "new",
+                "close": false
+            },
+            "group": "test"
+        },
+        {
             "label": "Build Pebble App",
             "type": "shell",
             "command": "wsl ~/.local/bin/pebble build",

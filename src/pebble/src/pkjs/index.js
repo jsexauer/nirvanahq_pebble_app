@@ -15,7 +15,7 @@ function uuidv4() {
   });
 }
 
-function loginAndFetch() {
+function loginAndFetch(viewType) {
   var dict = JSON.parse(localStorage.getItem('clay-settings')) || {};
   var username = dict.username;
   var password = dict.password;
@@ -56,7 +56,7 @@ function loginAndFetch() {
       var result = res.results && res.results[0];
       if (result && result.auth && result.auth.token) {
         authToken = result.auth.token;
-        fetchTasks();
+        fetchTasks(viewType);
       } else {
         console.log("Login failed: " + req.responseText);
         Pebble.sendAppMessage({ 'AppKeyTaskName': 'Login failed', 'AppKeyTaskCount': 1, 'AppKeyTaskIndex': 0 });
@@ -69,7 +69,7 @@ function loginAndFetch() {
   req.send(JSON.stringify(payload));
 }
 
-function fetchTasks() {
+function fetchTasks(viewType) {
   if (!authToken) {
     console.log("fetchTasks: No auth token available");
     return;
@@ -101,12 +101,27 @@ function fetchTasks() {
       for (var i = 0; i < results.length; i++) {
         if (results[i].task) {
           var t = results[i].task;
-          if (t.deleted !== 0 && t.state === 9) continue;
+          var state = t.state !== undefined ? parseInt(t.state, 10) : 0;
+          var seqt = t.seqt !== undefined ? parseInt(t.seqt, 10) : 0;
+          var deleted = t.deleted !== undefined ? parseInt(t.deleted, 10) : 0;
+          var vt = parseInt(viewType, 10);
 
-          if (t.state === '1') { // NEXT only
+          if (deleted !== 0 && state === 9) continue;
+
+          var include = false;
+          if (vt === 0) {
+            include = (state === 0);
+          } else if (vt === 1) {
+            include = (seqt !== 0 && state !== 7 && state !== 8 && state !== 9);
+          } else if (vt === 2) {
+            include = (state === 1);
+          } else if (vt === 3) {
+            include = (state === 2);
+          }
+
+          if (include) {
+            // Keep the original state just in case, but string/number doesn't matter for dict
             tasks.push(t);
-          } else {
-            console.log(t.state)
           }
         }
       }
@@ -223,7 +238,7 @@ Pebble.addEventListener('ready', function (e) {
 Pebble.addEventListener('appmessage', function (e) {
   console.log('AppMessage received!');
   if (e.payload.AppKeyRequestTasks !== undefined) {
-    loginAndFetch();
+    loginAndFetch(e.payload.AppKeyRequestTasks);
   }
   if (e.payload.AppKeyCreateTask !== undefined) {
     createTask(e.payload.AppKeyCreateTask);
@@ -238,7 +253,7 @@ Pebble.addEventListener('appmessage', function (e) {
           createTask(devConfig.mock_dictation);
           return;
         }
-      } catch (err) {}
+      } catch (err) { }
     }
     Pebble.sendAppMessage({ 'AppKeyStartDictation': 1 });
   }

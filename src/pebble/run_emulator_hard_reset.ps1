@@ -2,6 +2,11 @@ param (
     [string]$Emulator = "emery"
 )
 
+Write-Host "Wiping Pebble emulator state..."
+wsl --cd $PSScriptRoot ~/.local/bin/pebble wipe
+
+Write-Host "Cleaning Pebble build directory..."
+wsl --cd $PSScriptRoot ~/.local/bin/pebble clean
 
 Write-Host "Building Pebble app..."
 wsl --cd $PSScriptRoot ~/.local/bin/pebble build

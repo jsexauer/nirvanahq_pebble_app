@@ -37,7 +37,12 @@
       "AppKeyCreateTask",
       "AppKeyInitiateTaskCreation",
       "AppKeyStartDictation",
-      "AppKeyTaskCreatedSuccess"
+      "AppKeyTaskCreatedSuccess",
+      "AppKeyAreaCount",
+      "AppKeyAreaIndex",
+      "AppKeyAreaName",
+      "AppKeyFilterType",
+      "AppKeyFilterTag"
     ],
     "resources": {
       "media": [

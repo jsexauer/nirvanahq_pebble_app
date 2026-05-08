@@ -20,6 +20,26 @@ static char s_tasks[MAX_TASKS][MAX_TASK_NAME_LENGTH];
 static int s_task_states[MAX_TASKS];
 static int s_num_tasks = 0;
 static bool s_is_loading = true;
+static bool s_js_ready = false;
+static bool s_pending_task_request = false;
+static int s_current_view = 0; // 0=Inbox, 1=Focus, 2=Next, 3=Waiting
+
+static void request_tasks() {
+  s_is_loading = true;
+  s_num_tasks = 0;
+  if (s_loading_layer && s_tasks_menu_layer) {
+    layer_set_hidden(text_layer_get_layer(s_loading_layer), false);
+    layer_set_hidden(menu_layer_get_layer(s_tasks_menu_layer), true);
+  }
+  if (s_tasks_menu_layer) {
+    menu_layer_reload_data(s_tasks_menu_layer);
+  }
+  
+  DictionaryIterator *iter;
+  app_message_outbox_begin(&iter);
+  dict_write_uint8(iter, MESSAGE_KEY_AppKeyRequestTasks, s_current_view);
+  app_message_outbox_send();
+}
 
 static void success_timer_callback(void *data);
 
@@ -41,7 +61,7 @@ static void tasks_menu_draw_row_callback(GContext* ctx, const Layer *cell_layer,
 }
 
 static uint16_t main_menu_get_num_rows_callback(MenuLayer *menu_layer, uint16_t section_index, void *data) {
-  return 2;
+  return 5;
 }
 
 static void main_menu_draw_row_callback(GContext* ctx, const Layer *cell_layer, MenuIndex *cell_index, void *data) {
@@ -50,7 +70,16 @@ static void main_menu_draw_row_callback(GContext* ctx, const Layer *cell_layer, 
       menu_cell_basic_draw(ctx, cell_layer, "New Task", NULL, NULL);
       break;
     case 1:
-      menu_cell_basic_draw(ctx, cell_layer, "View Tasks", NULL, NULL);
+      menu_cell_basic_draw(ctx, cell_layer, "View Inbox", NULL, NULL);
+      break;
+    case 2:
+      menu_cell_basic_draw(ctx, cell_layer, "View Focus", NULL, NULL);
+      break;
+    case 3:
+      menu_cell_basic_draw(ctx, cell_layer, "View Next", NULL, NULL);
+      break;
+    case 4:
+      menu_cell_basic_draw(ctx, cell_layer, "View Waiting", NULL, NULL);
       break;
   }
 }
@@ -66,7 +95,16 @@ static void main_menu_select_callback(MenuLayer *menu_layer, MenuIndex *cell_ind
       }
       break;
     case 1:
+    case 2:
+    case 3:
+    case 4:
+      s_current_view = cell_index->row - 1;
       window_stack_push(s_tasks_window, true);
+      if (s_js_ready) {
+        request_tasks();
+      } else {
+        s_pending_task_request = true;
+      }
       break;
   }
 }
@@ -92,11 +130,11 @@ static void inbox_received_callback(DictionaryIterator *iterator, void *context)
   }
 
   if(ready_tuple) {
-    // JS is ready, request tasks
-    DictionaryIterator *iter;
-    app_message_outbox_begin(&iter);
-    dict_write_uint8(iter, MESSAGE_KEY_AppKeyRequestTasks, 1);
-    app_message_outbox_send();
+    s_js_ready = true;
+    if (s_pending_task_request) {
+      s_pending_task_request = false;
+      request_tasks();
+    }
     return;
   }
 
