@@ -42,7 +42,16 @@
       "AppKeyAreaIndex",
       "AppKeyAreaName",
       "AppKeyFilterType",
-      "AppKeyFilterTag"
+      "AppKeyFilterTag",
+      "AppKeyTaskId",
+      "AppKeyTaskNote",
+      "AppKeyTaskDueDate",
+      "AppKeyTaskTags",
+      "AppKeyTaskProject",
+      "AppKeyTaskDetail",
+      "AppKeyCompleteTask",
+      "AppKeyRenameTask",
+      "AppKeyChangeTaskState"
     ],
     "resources": {
       "media": [
@@ -51,6 +60,21 @@
           "name": "IMAGE_MENU_ICON",
           "file": "images/menu_icon.png",
           "menuIcon": true
+        },
+        {
+          "type": "bitmap",
+          "name": "ACTION_COMPLETE",
+          "file": "images/action_complete.png"
+        },
+        {
+          "type": "bitmap",
+          "name": "ACTION_EDIT",
+          "file": "images/action_edit.png"
+        },
+        {
+          "type": "bitmap",
+          "name": "ACTION_STATUS",
+          "file": "images/action_status.png"
         }
       ]
     }

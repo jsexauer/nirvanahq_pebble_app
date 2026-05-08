@@ -8,6 +8,11 @@ var APP_VERSION = "3.16.6";
 var API_BASE = "https://api.nirvanahq.com/api";
 var authToken = null;
 
+// Cache of full task objects from last fetch, keyed by task id
+var taskCache = {};
+// Cache of project name lookup by task id
+var projectCache = {};
+
 function uuidv4() {
   return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function (c) {
     var r = Math.random() * 16 | 0, v = c == 'x' ? r : (r & 0x3 | 0x8);
@@ -15,7 +20,25 @@ function uuidv4() {
   });
 }
 
-function loginAndFetch(viewType) {
+// Format YYYYMMDD -> MM/DD/YYYY, return "" if blank
+function formatDate(d) {
+  if (!d || d.length !== 8) return "";
+  return d.substring(4, 6) + "/" + d.substring(6, 8) + "/" + d.substring(0, 4);
+}
+
+// Strip leading/trailing commas from tags string
+function formatTags(tags) {
+  if (!tags) return "";
+  return tags.replace(/^,+|,+$/g, '').replace(/,/g, ', ');
+}
+
+// Truncate string to max length for AppMessage
+function trunc(str, max) {
+  if (!str) return "";
+  return str.length > max ? str.substring(0, max - 1) : str;
+}
+
+function getCredentials() {
   var dict = JSON.parse(localStorage.getItem('clay-settings')) || {};
   var username = dict.username;
   var password = dict.password;
@@ -27,12 +50,16 @@ function loginAndFetch(viewType) {
       if (devConfig && devConfig.username && devConfig.password) {
         username = devConfig.username;
         password = devConfig.password;
-        console.log("Using credentials from dev_config.json (Emulator mode)");
       }
-    } catch (e) {
-      console.log("Could not load dev_config.json");
-    }
+    } catch (e) {}
   }
+  return { username: username, password: password };
+}
+
+function loginAndFetch(viewType) {
+  var creds = getCredentials();
+  var username = creds.username;
+  var password = creds.password;
 
   if (!username || !password) {
     console.log("No credentials provided");
@@ -41,11 +68,7 @@ function loginAndFetch(viewType) {
   }
 
   var url = API_BASE + "/auth/new?&appid=" + APP_ID + "&appversion=" + APP_VERSION;
-  var payload = {
-    gmtoffset: 0,
-    u: username,
-    p: md5(password)
-  };
+  var payload = { gmtoffset: 0, u: username, p: md5(password) };
 
   var req = new XMLHttpRequest();
   req.open('POST', url, true);
@@ -58,24 +81,42 @@ function loginAndFetch(viewType) {
         authToken = result.auth.token;
         fetchTasks(viewType);
       } else {
-        console.log("Login failed: " + req.responseText);
         Pebble.sendAppMessage({ 'AppKeyTaskName': 'Login failed', 'AppKeyTaskCount': 1, 'AppKeyTaskIndex': 0 });
       }
     } else {
-      console.log("Login HTTP Error: " + req.status);
       Pebble.sendAppMessage({ 'AppKeyTaskName': 'Login error', 'AppKeyTaskCount': 1, 'AppKeyTaskIndex': 0 });
     }
   };
   req.send(JSON.stringify(payload));
 }
 
-function fetchTasks(viewType) {
-  if (!authToken) {
-    console.log("fetchTasks: No auth token available");
+function loginIfNeeded(callback) {
+  if (authToken) { callback(); return; }
+  var creds = getCredentials();
+  if (!creds.username || !creds.password) {
+    console.log("No credentials for loginIfNeeded");
     return;
   }
+  var url = API_BASE + "/auth/new?&appid=" + APP_ID + "&appversion=" + APP_VERSION;
+  var payload = { gmtoffset: 0, u: creds.username, p: md5(creds.password) };
+  var req = new XMLHttpRequest();
+  req.open('POST', url, true);
+  req.setRequestHeader("Content-Type", "application/json");
+  req.onload = function () {
+    if (req.status === 200) {
+      var res = JSON.parse(req.responseText);
+      var result = res.results && res.results[0];
+      if (result && result.auth && result.auth.token) {
+        authToken = result.auth.token;
+        callback();
+      }
+    }
+  };
+  req.send(JSON.stringify(payload));
+}
 
-  console.log("fetchTasks: Starting fetch request...");
+function fetchTasks(viewType) {
+  if (!authToken) return;
 
   var ts = new Date().getTime();
   var request_id = uuidv4();
@@ -85,22 +126,34 @@ function fetchTasks(viewType) {
     "&clienttime_ms=" + ts +
     "&requestid=" + request_id;
 
-  console.log("fetchTasks: URL generated -> " + url);
-
   var req = new XMLHttpRequest();
   req.open('POST', url, true);
   req.setRequestHeader("Content-Type", "application/json");
   req.onload = function () {
-    console.log("fetchTasks: Request returned with status " + req.status);
     if (req.status === 200) {
       var res = JSON.parse(req.responseText);
       var results = res.results || [];
-      console.log("fetchTasks: Received " + results.length + " total items from API.");
       var tasks = [];
 
+      // Reset caches
+      taskCache = {};
+      projectCache = {};
+
+      // First pass: build project name lookup
       for (var i = 0; i < results.length; i++) {
         if (results[i].task) {
           var t = results[i].task;
+          if (parseInt(t.type, 10) === 1) {
+            projectCache[t.id] = t.name;
+          }
+          taskCache[t.id] = t;
+        }
+      }
+
+      // Second pass: filter tasks for view
+      for (var j = 0; j < results.length; j++) {
+        if (results[j].task) {
+          var t = results[j].task;
           var state = t.state !== undefined ? parseInt(t.state, 10) : 0;
           var seqt = t.seqt !== undefined ? parseInt(t.seqt, 10) : 0;
           var deleted = t.deleted !== undefined ? parseInt(t.deleted, 10) : 0;
@@ -109,27 +162,17 @@ function fetchTasks(viewType) {
           if (deleted !== 0 && state === 9) continue;
 
           var include = false;
-          if (vt === 0) {
-            include = (state === 0);
-          } else if (vt === 1) {
-            include = (seqt !== 0 && state !== 7 && state !== 8 && state !== 9);
-          } else if (vt === 2) {
-            include = (state === 1);
-          } else if (vt === 3) {
-            include = (state === 2);
-          }
+          if (vt === 0) include = (state === 0);
+          else if (vt === 1) include = (seqt !== 0 && state !== 7 && state !== 8 && state !== 9);
+          else if (vt === 2) include = (state === 1);
+          else if (vt === 3) include = (state === 2);
 
-          if (include) {
-            // Keep the original state just in case, but string/number doesn't matter for dict
-            tasks.push(t);
-          }
+          if (include) tasks.push(t);
         }
       }
 
-      console.log("fetchTasks: Filtered down to " + tasks.length + " actionable tasks.");
       sendTasksToWatch(tasks);
     } else {
-      console.log("Fetch HTTP Error: " + req.status + " - " + req.responseText);
       Pebble.sendAppMessage({ 'AppKeyTaskName': 'Fetch error', 'AppKeyTaskCount': 1, 'AppKeyTaskIndex': 0 });
     }
   };
@@ -146,22 +189,21 @@ function sendTasksToWatch(tasks) {
   var maxTasks = Math.min(tasks.length, 20);
 
   function sendNext() {
-    if (index >= maxTasks) {
-      return;
-    }
+    if (index >= maxTasks) return;
 
     var dict = {
       'AppKeyTaskIndex': index,
       'AppKeyTaskCount': maxTasks,
-      'AppKeyTaskName': tasks[index].name,
-      'AppKeyTaskState': tasks[index].state
+      'AppKeyTaskName':  trunc(tasks[index].name, 60),
+      'AppKeyTaskState': tasks[index].state,
+      'AppKeyTaskId':    trunc(tasks[index].id, 60)
     };
 
     Pebble.sendAppMessage(dict, function () {
       index++;
       sendNext();
     }, function (e) {
-      console.log('Error sending task info for index ' + index + ' Error: ' + JSON.stringify(e));
+      console.log('Error sending task index ' + index + ': ' + JSON.stringify(e));
       index++;
       sendNext();
     });
@@ -170,21 +212,76 @@ function sendTasksToWatch(tasks) {
   sendNext();
 }
 
+function sendDetailToWatch(task) {
+  var projectName = task.parentid ? (projectCache[task.parentid] || "") : "";
+  var tags = formatTags(task.tags);
+  var due = formatDate(task.duedate);
+  var note = trunc(task.note || "", 120);
+  var seqt = task.seqt !== undefined ? parseInt(task.seqt, 10) : 0;
+  var state = task.state !== undefined ? parseInt(task.state, 10) : 0;
+  // If focused (seqt != 0) report a synthetic state indicator via the existing state field
+  // We keep the real state value; focus is indicated by seqt on the server side
+
+  Pebble.sendAppMessage({
+    'AppKeyTaskDetail':  1,
+    'AppKeyTaskId':      trunc(task.id, 60),
+    'AppKeyTaskName':    trunc(task.name || "", 60),
+    'AppKeyTaskState':   state,
+    'AppKeyTaskNote':    note,
+    'AppKeyTaskDueDate': due,
+    'AppKeyTaskTags':    tags,
+    'AppKeyTaskProject': trunc(projectName, 60)
+  }, function() {
+    console.log("Detail sent for task: " + task.id);
+  }, function(e) {
+    console.log("Error sending detail: " + JSON.stringify(e));
+  });
+}
+
+function apiSave(payload, callback) {
+  if (!authToken) {
+    loginIfNeeded(function() { apiSave(payload, callback); });
+    return;
+  }
+  var ts = new Date().getTime();
+  var url = API_BASE + "/everything?&appid=" + APP_ID + "&appversion=" + APP_VERSION +
+    "&return=everything&since_ms=0" +
+    "&authtoken=" + authToken +
+    "&clienttime_ms=" + ts +
+    "&requestid=" + uuidv4();
+
+  var req = new XMLHttpRequest();
+  req.open('POST', url, true);
+  req.setRequestHeader("Content-Type", "application/json");
+  req.onload = function () {
+    if (req.status === 200) {
+      var res = JSON.parse(req.responseText);
+      // Update cache with returned tasks
+      var results = res.results || [];
+      for (var i = 0; i < results.length; i++) {
+        if (results[i].task) {
+          taskCache[results[i].task.id] = results[i].task;
+        }
+      }
+      if (callback) callback(null);
+    } else {
+      if (callback) callback(new Error("HTTP " + req.status));
+    }
+  };
+  req.send(JSON.stringify(payload));
+}
+
 function createTask(name) {
   if (!authToken) {
-    console.log("createTask: No auth token available");
-    Pebble.sendAppMessage({ 'AppKeyTaskName': 'Cannot create: no auth', 'AppKeyTaskCount': 1, 'AppKeyTaskIndex': 0 });
+    loginIfNeeded(function() { createTask(name); });
     return;
   }
 
-  console.log("createTask: Creating task -> " + name);
-
   var ts = new Date().getTime();
   var ts_sec = Math.floor(ts / 1000);
-  var request_id = uuidv4();
   var task_id = uuidv4();
 
-  var payload = [{
+  var newTask = {
     "method": "task.save",
     "id": task_id,
     "type": 0, "_type": ts_sec, "_type_ms": ts,
@@ -206,28 +303,106 @@ function createTask(name) {
     "duedate": "", "_duedate": ts_sec, "_duedate_ms": ts,
     "recurring": "", "_recurring": ts_sec, "_recurring_ms": ts,
     "deleted": 0, "_deleted": ts_sec, "_deleted_ms": ts
-  }];
+  };
 
-  var url = API_BASE + "/everything?&appid=" + APP_ID + "&appversion=" + APP_VERSION +
-    "&return=everything&since_ms=0" +
-    "&authtoken=" + authToken +
-    "&clienttime_ms=" + ts +
-    "&requestid=" + request_id;
+  // Store in cache immediately
+  taskCache[task_id] = newTask;
 
-  var req = new XMLHttpRequest();
-  req.open('POST', url, true);
-  req.setRequestHeader("Content-Type", "application/json");
-  req.onload = function () {
-    if (req.status === 200) {
-      console.log("createTask: Task created successfully!");
-      fetchTasks();
-      Pebble.sendAppMessage({ 'AppKeyTaskCreatedSuccess': 1 });
+  apiSave([newTask], function(err) {
+    if (!err) {
+      console.log("createTask: Task created -> " + task_id);
+      // Send detail screen data for the new task
+      sendDetailToWatch(taskCache[task_id]);
     } else {
-      console.log("createTask HTTP Error: " + req.status + " - " + req.responseText);
       Pebble.sendAppMessage({ 'AppKeyTaskName': 'Create error', 'AppKeyTaskCount': 1, 'AppKeyTaskIndex': 0 });
     }
-  };
-  req.send(JSON.stringify(payload));
+  });
+}
+
+function sendDetailById(taskId) {
+  var task = taskCache[taskId];
+  if (task) {
+    sendDetailToWatch(task);
+  } else {
+    console.log("sendDetailById: task not in cache -> " + taskId);
+    // Task not in cache; send a minimal placeholder
+    Pebble.sendAppMessage({
+      'AppKeyTaskDetail': 1,
+      'AppKeyTaskId': taskId,
+      'AppKeyTaskName': 'Loading...',
+      'AppKeyTaskState': 0,
+      'AppKeyTaskNote': '',
+      'AppKeyTaskDueDate': '',
+      'AppKeyTaskTags': '',
+      'AppKeyTaskProject': ''
+    });
+  }
+}
+
+function completeTask(taskId) {
+  var task = taskCache[taskId];
+  if (!task) { console.log("completeTask: not in cache"); return; }
+
+  var ts = new Date().getTime();
+  var ts_sec = Math.floor(ts / 1000);
+
+  var payload = [{ "method": "task.save", "id": taskId,
+    "state": 7, "_state": ts_sec, "_state_ms": ts,
+    "completed": ts_sec, "_completed": ts_sec, "_completed_ms": ts }];
+
+  apiSave(payload, function(err) {
+    if (!err) {
+      console.log("completeTask: done -> " + taskId);
+    }
+  });
+}
+
+function renameTask(taskId, newName) {
+  var task = taskCache[taskId];
+  if (!task) { console.log("renameTask: not in cache"); return; }
+
+  var ts = new Date().getTime();
+  var ts_sec = Math.floor(ts / 1000);
+
+  var payload = [{ "method": "task.save", "id": taskId,
+    "name": newName, "_name": ts_sec, "_name_ms": ts }];
+
+  apiSave(payload, function(err) {
+    if (!err) {
+      // Update local cache
+      taskCache[taskId].name = newName;
+      // Send refreshed detail back to watch
+      sendDetailToWatch(taskCache[taskId]);
+    } else {
+      console.log("renameTask error");
+    }
+  });
+}
+
+function changeTaskState(taskId, newState) {
+  var task = taskCache[taskId];
+  if (!task) { console.log("changeTaskState: not in cache"); return; }
+
+  var ts = new Date().getTime();
+  var ts_sec = Math.floor(ts / 1000);
+
+  var isFocus = (newState === -1);
+  var actualState = isFocus ? (task.state !== undefined ? parseInt(task.state, 10) : 0) : newState;
+  var newSeqt = isFocus ? ts_sec : 0;
+
+  var payload = [{ "method": "task.save", "id": taskId,
+    "state": actualState, "_state": ts_sec, "_state_ms": ts,
+    "seqt": newSeqt, "_seqt": ts_sec, "_seqt_ms": ts }];
+
+  apiSave(payload, function(err) {
+    if (!err) {
+      taskCache[taskId].state = actualState;
+      taskCache[taskId].seqt = newSeqt;
+      sendDetailToWatch(taskCache[taskId]);
+    } else {
+      console.log("changeTaskState error");
+    }
+  });
 }
 
 Pebble.addEventListener('ready', function (e) {
@@ -236,25 +411,46 @@ Pebble.addEventListener('ready', function (e) {
 });
 
 Pebble.addEventListener('appmessage', function (e) {
-  console.log('AppMessage received!');
-  if (e.payload.AppKeyRequestTasks !== undefined) {
-    loginAndFetch(e.payload.AppKeyRequestTasks);
+  var p = e.payload;
+  console.log('AppMessage received: ' + JSON.stringify(Object.keys(p)));
+
+  if (p.AppKeyRequestTasks !== undefined) {
+    loginAndFetch(p.AppKeyRequestTasks);
   }
-  if (e.payload.AppKeyCreateTask !== undefined) {
-    createTask(e.payload.AppKeyCreateTask);
+
+  if (p.AppKeyCreateTask !== undefined) {
+    createTask(p.AppKeyCreateTask);
   }
-  if (e.payload.AppKeyInitiateTaskCreation !== undefined) {
+
+  if (p.AppKeyInitiateTaskCreation !== undefined) {
     var watchInfo = Pebble.getActiveWatchInfo && Pebble.getActiveWatchInfo();
     if (watchInfo && watchInfo.model && watchInfo.model.indexOf('qemu') > -1) {
       try {
         var devConfig = require('./dev_config.json');
         if (devConfig && devConfig.mock_dictation) {
-          console.log("Using mock dictation from dev_config.json");
           createTask(devConfig.mock_dictation);
           return;
         }
-      } catch (err) { }
+      } catch (err) {}
     }
     Pebble.sendAppMessage({ 'AppKeyStartDictation': 1 });
+  }
+
+  if (p.AppKeyTaskId !== undefined && p.AppKeyCompleteTask === undefined &&
+      p.AppKeyRenameTask === undefined && p.AppKeyChangeTaskState === undefined) {
+    // Watch requesting task detail
+    sendDetailById(p.AppKeyTaskId);
+  }
+
+  if (p.AppKeyCompleteTask !== undefined && p.AppKeyTaskId !== undefined) {
+    completeTask(p.AppKeyTaskId);
+  }
+
+  if (p.AppKeyRenameTask !== undefined && p.AppKeyTaskId !== undefined) {
+    renameTask(p.AppKeyTaskId, p.AppKeyRenameTask);
+  }
+
+  if (p.AppKeyChangeTaskState !== undefined && p.AppKeyTaskId !== undefined) {
+    changeTaskState(p.AppKeyTaskId, p.AppKeyChangeTaskState);
   }
 });
