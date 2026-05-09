@@ -148,6 +148,7 @@ function fetchTasks(viewType) {
           var t = results[i].task;
           if (parseInt(t.type, 10) === 1) {
             projectCache[t.id] = t.name;
+            console.log("Cached project: " + t.name + " (" + t.id + ")");
           }
           taskCache[t.id] = t;
         } else if (results[i].tag) {
@@ -191,7 +192,7 @@ function sendTasksToWatch(tasks) {
   }
 
   var index = 0;
-  var maxTasks = Math.min(tasks.length, 20);
+  var maxTasks = Math.min(tasks.length, 50);
 
   function sendNext() {
     if (index >= maxTasks) return;
@@ -218,12 +219,14 @@ function sendTasksToWatch(tasks) {
 }
 
 function sendDetailToWatch(task) {
+  console.log("sendDetailToWatch task object: " + JSON.stringify(task));
   var projectName = "";
   if (task.parentid && taskCache[task.parentid]) {
     projectName = taskCache[task.parentid].name;
   } else if (task.parentid && projectCache[task.parentid]) {
     projectName = projectCache[task.parentid];
   }
+  console.log("sendDetailToWatch resolved projectName: '" + projectName + "' for parentid: '" + task.parentid + "'");
 
   var tags = formatTags(task.tags);
   var due = formatDate(task.duedate);
@@ -420,8 +423,12 @@ function changeTaskState(taskId, newState) {
 }
 
 function editTaskField(taskId, field, value) {
+  console.log("editTaskField: taskId=" + taskId + ", field=" + field + ", value=" + value);
   var task = taskCache[taskId];
-  if (!task) return;
+  if (!task) {
+    console.log("editTaskField: taskId " + taskId + " not found in taskCache!");
+    return;
+  }
 
   var ts = new Date().getTime();
   var ts_sec = Math.floor(ts / 1000);
@@ -477,7 +484,7 @@ function editTaskField(taskId, field, value) {
 
 function sendListToWatch(items, listType) {
   var index = 0;
-  var maxItems = Math.min(items.length, 20);
+  var maxItems = Math.min(items.length, 50);
 
   if (maxItems === 0) {
     Pebble.sendAppMessage({ 'AppKeyListCount': 0, 'AppKeyListType': listType, 'AppKeyListIndex': 0, 'AppKeyListItemName': 'No items' });
@@ -565,9 +572,11 @@ Pebble.addEventListener('appmessage', function (e) {
         }
       }
     } else if (listType === 3) { // Project
+      console.log("Requesting project list. Current projectCache size: " + Object.keys(projectCache).length);
       for (var id in projectCache) {
         items.push({name: projectCache[id], id: id});
       }
+      console.log("Projects found for watch list: " + JSON.stringify(items));
     }
     sendListToWatch(items, listType);
   }

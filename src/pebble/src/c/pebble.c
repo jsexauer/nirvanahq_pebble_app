@@ -1,7 +1,7 @@
 #include <pebble.h>
 #include <string.h>
 
-#define MAX_TASKS 20
+#define MAX_TASKS 50
 #define MAX_TASK_NAME_LENGTH 64
 #define MAX_TASK_ID_LENGTH 64
 #define DETAIL_BUF_SIZE 128

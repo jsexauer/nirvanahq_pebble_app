@@ -308,7 +308,7 @@ Tags serve triple duty as contexts (e.g. `@home`), contacts (people you delegate
 
 | Integer | Constant   | Description                                    |
 |---------|------------|------------------------------------------------|
-| 0       | `CONTEXT`  | A context tag (e.g. `calls`, `computer`, `errands`) |
+| 0       | `CONTEXT`  | A context tag (e.g. `#tara`, `#keystone`, `calls`) |
 | 1       | `AREA`     | An area of focus (e.g. `@work`, `@home`)       |
 | 2       | `CONTACT`  | A person/contact (used with "waiting for") (e.g. `Marilyn`, `Jason Miller`) |
 
