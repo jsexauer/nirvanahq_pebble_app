@@ -29,7 +29,10 @@ static GBitmap *s_icon_complete;
 static GBitmap *s_icon_edit;
 static GBitmap *s_icon_status;
 
-
+// --- Status Bars ---
+static TextLayer *s_main_status_bar_layer;
+static TextLayer *s_tasks_status_bar_layer;
+static TextLayer *s_detail_status_bar_layer;
 
 // --- Status Picker Window ---
 static Window *s_status_window;
@@ -371,8 +374,17 @@ static void detail_window_load(Window *window) {
   GRect bounds = layer_get_bounds(root);
   int W = bounds.size.w;
 
-  // Scroll layer uses full window width — added FIRST so action bar renders on top
-  s_detail_scroll_layer = scroll_layer_create(bounds);
+  // Top Status Bar
+  s_detail_status_bar_layer = text_layer_create(GRect(0, 0, bounds.size.w, 16));
+  text_layer_set_text(s_detail_status_bar_layer, "NirvanaHQ GTD");
+  text_layer_set_text_alignment(s_detail_status_bar_layer, GTextAlignmentCenter);
+  text_layer_set_font(s_detail_status_bar_layer, fonts_get_system_font(FONT_KEY_GOTHIC_14_BOLD));
+  text_layer_set_background_color(s_detail_status_bar_layer, GColorCobaltBlue);
+  text_layer_set_text_color(s_detail_status_bar_layer, GColorWhite);
+  layer_add_child(root, text_layer_get_layer(s_detail_status_bar_layer));
+
+  // Scroll layer uses remaining height — added FIRST so action bar renders on top
+  s_detail_scroll_layer = scroll_layer_create(GRect(0, 16, bounds.size.w, bounds.size.h - 16));
   layer_add_child(root, scroll_layer_get_layer(s_detail_scroll_layer));
 
   // Action bar: overlay on right edge, added LAST so it's on top of scroll content.
@@ -381,7 +393,7 @@ static void detail_window_load(Window *window) {
   action_bar_layer_set_icon(s_detail_action_bar, BUTTON_ID_UP,     s_icon_complete);
   action_bar_layer_set_icon(s_detail_action_bar, BUTTON_ID_SELECT, s_icon_edit);
   action_bar_layer_set_icon(s_detail_action_bar, BUTTON_ID_DOWN,   s_icon_status);
-  GRect bar_frame = GRect(W - ACTION_BAR_WIDTH, 0, ACTION_BAR_WIDTH, bounds.size.h);
+  GRect bar_frame = GRect(W - ACTION_BAR_WIDTH, 16, ACTION_BAR_WIDTH, bounds.size.h - 16);
   layer_set_frame(action_bar_layer_get_layer(s_detail_action_bar), bar_frame);
   layer_add_child(root, action_bar_layer_get_layer(s_detail_action_bar));
   layer_set_hidden(action_bar_layer_get_layer(s_detail_action_bar), true);
@@ -453,6 +465,7 @@ static void detail_window_unload(Window *window) {
   text_layer_destroy(s_detail_tags_label);
   text_layer_destroy(s_detail_due_label);
   text_layer_destroy(s_detail_note_label);
+  text_layer_destroy(s_detail_status_bar_layer);
 }
 
 static void detail_window_push(void) {
@@ -487,12 +500,21 @@ static void tasks_window_load(Window *window) {
   Layer *window_layer = window_get_root_layer(window);
   GRect bounds = layer_get_bounds(window_layer);
 
-  s_loading_layer = text_layer_create(GRect(0, bounds.size.h / 2 - 10, bounds.size.w, 20));
+  // Top Status Bar
+  s_tasks_status_bar_layer = text_layer_create(GRect(0, 0, bounds.size.w, 16));
+  text_layer_set_text(s_tasks_status_bar_layer, "NirvanaHQ GTD");
+  text_layer_set_text_alignment(s_tasks_status_bar_layer, GTextAlignmentCenter);
+  text_layer_set_font(s_tasks_status_bar_layer, fonts_get_system_font(FONT_KEY_GOTHIC_14_BOLD));
+  text_layer_set_background_color(s_tasks_status_bar_layer, GColorCobaltBlue);
+  text_layer_set_text_color(s_tasks_status_bar_layer, GColorWhite);
+  layer_add_child(window_layer, text_layer_get_layer(s_tasks_status_bar_layer));
+
+  s_loading_layer = text_layer_create(GRect(0, (bounds.size.h - 16) / 2 + 16 - 10, bounds.size.w, 20));
   text_layer_set_text(s_loading_layer, "Loading tasks...");
   text_layer_set_text_alignment(s_loading_layer, GTextAlignmentCenter);
   layer_add_child(window_layer, text_layer_get_layer(s_loading_layer));
 
-  s_tasks_menu_layer = menu_layer_create(bounds);
+  s_tasks_menu_layer = menu_layer_create(GRect(0, 16, bounds.size.w, bounds.size.h - 16));
   menu_layer_set_callbacks(s_tasks_menu_layer, NULL, (MenuLayerCallbacks){
     .get_num_rows = tasks_menu_get_num_rows_callback,
     .draw_row = tasks_menu_draw_row_callback,
@@ -506,6 +528,7 @@ static void tasks_window_load(Window *window) {
 static void tasks_window_unload(Window *window) {
   menu_layer_destroy(s_tasks_menu_layer);
   text_layer_destroy(s_loading_layer);
+  text_layer_destroy(s_tasks_status_bar_layer);
 }
 
 // ==================== MAIN MENU WINDOW ====================
@@ -553,7 +576,16 @@ static void main_window_load(Window *window) {
   Layer *window_layer = window_get_root_layer(window);
   GRect bounds = layer_get_bounds(window_layer);
 
-  s_main_menu_layer = menu_layer_create(bounds);
+  // Top Status Bar
+  s_main_status_bar_layer = text_layer_create(GRect(0, 0, bounds.size.w, 16));
+  text_layer_set_text(s_main_status_bar_layer, "NirvanaHQ GTD");
+  text_layer_set_text_alignment(s_main_status_bar_layer, GTextAlignmentCenter);
+  text_layer_set_font(s_main_status_bar_layer, fonts_get_system_font(FONT_KEY_GOTHIC_14_BOLD));
+  text_layer_set_background_color(s_main_status_bar_layer, GColorCobaltBlue);
+  text_layer_set_text_color(s_main_status_bar_layer, GColorWhite);
+  layer_add_child(window_layer, text_layer_get_layer(s_main_status_bar_layer));
+
+  s_main_menu_layer = menu_layer_create(GRect(0, 16, bounds.size.w, bounds.size.h - 16));
   menu_layer_set_callbacks(s_main_menu_layer, NULL, (MenuLayerCallbacks){
     .get_num_rows = main_menu_get_num_rows_callback,
     .draw_row = main_menu_draw_row_callback,
@@ -565,6 +597,7 @@ static void main_window_load(Window *window) {
 
 static void main_window_unload(Window *window) {
   menu_layer_destroy(s_main_menu_layer);
+  text_layer_destroy(s_main_status_bar_layer);
 }
 
 // ==================== APP MESSAGE ====================
