@@ -20,7 +20,8 @@ static Window *s_detail_window;
 static ScrollLayer *s_detail_scroll_layer;
 static TextLayer *s_detail_title_layer;
 static TextLayer *s_detail_project_label;
-static TextLayer *s_detail_tags_label;
+static TextLayer *s_detail_areas_label;
+static TextLayer *s_detail_contexts_label;
 static TextLayer *s_detail_due_label;
 static TextLayer *s_detail_status_label;
 static TextLayer *s_detail_note_label;
@@ -81,7 +82,8 @@ static char s_detail_id[MAX_TASK_ID_LENGTH];
 static char s_detail_name[MAX_TASK_NAME_LENGTH];
 static char s_detail_note[DETAIL_BUF_SIZE];
 static char s_detail_due[32];
-static char s_detail_tags[DETAIL_BUF_SIZE];
+static char s_detail_areas[DETAIL_BUF_SIZE];
+static char s_detail_contexts[DETAIL_BUF_SIZE];
 static char s_detail_project[MAX_TASK_NAME_LENGTH];
 static int  s_detail_state = 0;
 static int  s_detail_focus = 0;
@@ -460,8 +462,20 @@ static void action_click_config(void *ctx) {
 }
 
 static void detail_refresh_layers(void) {
-  // Title
+  GRect bounds = layer_get_bounds(window_get_root_layer(s_detail_window));
+  int W = bounds.size.w;
+  int w = W - 8;
+  int y = 4;
+
+  // Title: dynamic height measuring
   text_layer_set_text(s_detail_title_layer, s_detail_name);
+  GFont title_font = fonts_get_system_font(FONT_KEY_GOTHIC_18_BOLD);
+  GSize title_size = graphics_text_layout_get_content_size(s_detail_name, title_font,
+      GRect(0, 0, w, 1000), GTextOverflowModeWordWrap, GTextAlignmentLeft);
+  int title_h = title_size.h;
+  if (title_h < 24) title_h = 24;
+  layer_set_frame(text_layer_get_layer(s_detail_title_layer), GRect(4, y, w, title_h));
+  y += title_h + 4;
 
   // Status: bold text, no prefix label
   if (s_detail_focus) {
@@ -472,33 +486,66 @@ static void detail_refresh_layers(void) {
     text_layer_set_text(s_detail_status_label, state_name(s_detail_state));
     text_layer_set_text_color(s_detail_status_label, GColorBlack);
   }
+  layer_set_frame(text_layer_get_layer(s_detail_status_label), GRect(0, y, W, 20));
+  y += 20;
 
-  // Tags: no prefix label; show dash if empty
-  text_layer_set_text(s_detail_tags_label, s_detail_tags[0] ? s_detail_tags : "-");
+  // Areas (completely collapsed if empty)
+  if (s_detail_areas[0]) {
+    text_layer_set_text(s_detail_areas_label, s_detail_areas);
+    layer_set_frame(text_layer_get_layer(s_detail_areas_label), GRect(0, y, W, 20));
+    layer_set_hidden(text_layer_get_layer(s_detail_areas_label), false);
+    y += 20;
+  } else {
+    layer_set_hidden(text_layer_get_layer(s_detail_areas_label), true);
+  }
 
-  // Project (hidden if empty)
+  // Contexts (completely collapsed if empty)
+  if (s_detail_contexts[0]) {
+    text_layer_set_text(s_detail_contexts_label, s_detail_contexts);
+    layer_set_frame(text_layer_get_layer(s_detail_contexts_label), GRect(0, y, W, 20));
+    layer_set_hidden(text_layer_get_layer(s_detail_contexts_label), false);
+    y += 20;
+  } else {
+    layer_set_hidden(text_layer_get_layer(s_detail_contexts_label), true);
+  }
+
+  y += 4; // gap
+
+  // Project (completely collapsed if empty)
   if (s_detail_project[0]) {
     snprintf(s_buf_project, sizeof(s_buf_project), "Project: %s", s_detail_project);
     text_layer_set_text(s_detail_project_label, s_buf_project);
+    layer_set_frame(text_layer_get_layer(s_detail_project_label), GRect(4, y, w, 18));
     layer_set_hidden(text_layer_get_layer(s_detail_project_label), false);
+    y += 20;
   } else {
     layer_set_hidden(text_layer_get_layer(s_detail_project_label), true);
   }
 
-  // Due date (hidden if empty)
+  // Due date (completely collapsed if empty)
   if (s_detail_due[0]) {
     snprintf(s_buf_due, sizeof(s_buf_due), "Due: %s", s_detail_due);
     text_layer_set_text(s_detail_due_label, s_buf_due);
+    layer_set_frame(text_layer_get_layer(s_detail_due_label), GRect(4, y, w, 18));
     layer_set_hidden(text_layer_get_layer(s_detail_due_label), false);
+    y += 20;
   } else {
     layer_set_hidden(text_layer_get_layer(s_detail_due_label), true);
   }
 
-  // Notes
-  text_layer_set_text(s_detail_note_label, s_detail_note[0] ? s_detail_note : "(no notes)");
+  // Notes: dynamic height measuring
+  const char *note_text = s_detail_note[0] ? s_detail_note : "(no notes)";
+  text_layer_set_text(s_detail_note_label, note_text);
+  GFont note_font = fonts_get_system_font(FONT_KEY_GOTHIC_14);
+  GSize note_size = graphics_text_layout_get_content_size(note_text, note_font,
+      GRect(0, 0, w, 1000), GTextOverflowModeWordWrap, GTextAlignmentLeft);
+  int note_h = note_size.h;
+  if (note_h < 20) note_h = 20;
+  layer_set_frame(text_layer_get_layer(s_detail_note_label), GRect(4, y, w, note_h + 10));
+  y += note_h + 20;
 
-  GRect sb = layer_get_bounds(scroll_layer_get_layer(s_detail_scroll_layer));
-  scroll_layer_set_content_size(s_detail_scroll_layer, GSize(sb.size.w, 300));
+  // Dynamic scroll size
+  scroll_layer_set_content_size(s_detail_scroll_layer, GSize(W, y + 10));
 }
 
 static void detail_window_load(Window *window) {
@@ -549,13 +596,22 @@ static void detail_window_load(Window *window) {
   scroll_layer_add_child(s_detail_scroll_layer, text_layer_get_layer(s_detail_status_label));
   y += 20;
 
-  // Tags: orange background, right below status
-  s_detail_tags_label = text_layer_create(GRect(0, y, W, 20));
-  text_layer_set_font(s_detail_tags_label, fonts_get_system_font(FONT_KEY_GOTHIC_14));
-  text_layer_set_background_color(s_detail_tags_label, GColorOrange);
-  text_layer_set_text_color(s_detail_tags_label, GColorWhite);
-  text_layer_set_text_alignment(s_detail_tags_label, GTextAlignmentCenter);
-  scroll_layer_add_child(s_detail_scroll_layer, text_layer_get_layer(s_detail_tags_label));
+  // Areas: orange background, right below status
+  s_detail_areas_label = text_layer_create(GRect(0, y, W, 20));
+  text_layer_set_font(s_detail_areas_label, fonts_get_system_font(FONT_KEY_GOTHIC_14));
+  text_layer_set_background_color(s_detail_areas_label, GColorOrange);
+  text_layer_set_text_color(s_detail_areas_label, GColorWhite);
+  text_layer_set_text_alignment(s_detail_areas_label, GTextAlignmentCenter);
+  scroll_layer_add_child(s_detail_scroll_layer, text_layer_get_layer(s_detail_areas_label));
+  y += 20;
+
+  // Contexts: pink background, below areas
+  s_detail_contexts_label = text_layer_create(GRect(0, y, W, 20));
+  text_layer_set_font(s_detail_contexts_label, fonts_get_system_font(FONT_KEY_GOTHIC_14));
+  text_layer_set_background_color(s_detail_contexts_label, GColorBabyBlueEyes);
+  text_layer_set_text_color(s_detail_contexts_label, GColorBlack);
+  text_layer_set_text_alignment(s_detail_contexts_label, GTextAlignmentCenter);
+  scroll_layer_add_child(s_detail_scroll_layer, text_layer_get_layer(s_detail_contexts_label));
   y += 20;
 
   y += 4; // small gap
@@ -594,7 +650,8 @@ static void detail_window_unload(Window *window) {
   text_layer_destroy(s_detail_title_layer);
   text_layer_destroy(s_detail_status_label);
   text_layer_destroy(s_detail_project_label);
-  text_layer_destroy(s_detail_tags_label);
+  text_layer_destroy(s_detail_areas_label);
+  text_layer_destroy(s_detail_contexts_label);
   text_layer_destroy(s_detail_due_label);
   text_layer_destroy(s_detail_note_label);
   text_layer_destroy(s_detail_status_bar_layer);
@@ -696,8 +753,9 @@ static void tasks_menu_select_callback(MenuLayer *menu_layer, MenuIndex *cell_in
   s_detail_state = s_task_states[row];
   s_detail_note[0]    = '\0';
   s_detail_due[0]     = '\0';
-  s_detail_tags[0]    = '\0';
-  s_detail_project[0] = '\0';
+  s_detail_contexts[0] = '\0';
+  s_detail_areas[0]    = '\0';
+  s_detail_project[0]  = '\0';
 
   detail_window_push();
   request_detail();
@@ -835,6 +893,7 @@ static void inbox_received_callback(DictionaryIterator *iterator, void *context)
   Tuple *note_tuple          = dict_find(iterator, MESSAGE_KEY_AppKeyTaskNote);
   Tuple *due_tuple           = dict_find(iterator, MESSAGE_KEY_AppKeyTaskDueDate);
   Tuple *tags_tuple          = dict_find(iterator, MESSAGE_KEY_AppKeyTaskTags);
+  Tuple *areas_tuple         = dict_find(iterator, MESSAGE_KEY_AppKeyTaskAreas);
   Tuple *project_tuple       = dict_find(iterator, MESSAGE_KEY_AppKeyTaskProject);
 
   Tuple *list_count_tuple    = dict_find(iterator, MESSAGE_KEY_AppKeyListCount);
@@ -866,13 +925,22 @@ static void inbox_received_callback(DictionaryIterator *iterator, void *context)
 
   // Detail data arriving (new task created OR task selected)
   if (detail_tuple) {
+    s_detail_name[0] = '\0';
+    s_detail_id[0] = '\0';
+    s_detail_note[0] = '\0';
+    s_detail_due[0] = '\0';
+    s_detail_contexts[0] = '\0';
+    s_detail_areas[0] = '\0';
+    s_detail_project[0] = '\0';
+
     if (name_tuple)    { strncpy(s_detail_name,    name_tuple->value->cstring,    MAX_TASK_NAME_LENGTH - 1); }
     if (id_tuple)      { strncpy(s_detail_id,      id_tuple->value->cstring,      MAX_TASK_ID_LENGTH - 1); }
     if (state_tuple)   { s_detail_state = state_tuple->value->int32; }
     if (focus_tuple)   { s_detail_focus = focus_tuple->value->int32; } else { s_detail_focus = 0; }
     if (note_tuple)    { strncpy(s_detail_note,    note_tuple->value->cstring,    DETAIL_BUF_SIZE - 1); }
     if (due_tuple)     { strncpy(s_detail_due,     due_tuple->value->cstring,     sizeof(s_detail_due) - 1); }
-    if (tags_tuple)    { strncpy(s_detail_tags,    tags_tuple->value->cstring,    DETAIL_BUF_SIZE - 1); }
+    if (tags_tuple)    { strncpy(s_detail_contexts,tags_tuple->value->cstring,    DETAIL_BUF_SIZE - 1); }
+    if (areas_tuple)   { strncpy(s_detail_areas,   areas_tuple->value->cstring,   DETAIL_BUF_SIZE - 1); }
     if (project_tuple) { strncpy(s_detail_project, project_tuple->value->cstring, MAX_TASK_NAME_LENGTH - 1); }
 
     if (!window_stack_contains_window(s_detail_window)) {

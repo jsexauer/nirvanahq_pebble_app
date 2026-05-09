@@ -2,6 +2,11 @@ param (
     [string]$Emulator = "emery"
 )
 
+Write-Host "Killing any existing Pebble emulator background services..."
+wsl ~/.local/bin/pebble kill
+Get-Process -Name "qemu-system-arm", "pebble" -ErrorAction SilentlyContinue | Stop-Process -Force
+Start-Sleep -Seconds 2
+
 Write-Host "Wiping Pebble emulator state..."
 wsl --cd $PSScriptRoot ~/.local/bin/pebble wipe
 

@@ -47,6 +47,7 @@
       "AppKeyTaskNote",
       "AppKeyTaskDueDate",
       "AppKeyTaskTags",
+      "AppKeyTaskAreas",
       "AppKeyTaskProject",
       "AppKeyTaskDetail",
       "AppKeyTaskFocus",

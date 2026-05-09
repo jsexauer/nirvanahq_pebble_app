@@ -37,8 +37,10 @@ The project consists of three main components:
 The project is built inside a WSL (Windows Subsystem for Linux) environment, as the Pebble SDK relies on Linux tooling.
 
 - **`package.json`**: Contains Pebble app metadata, capabilities (e.g., `voice`), and `messageKeys`. Whenever you add a new `AppKey` to `messageKeys`, you **must** rebuild the project.
-- **`run_emulator.ps1` & `run_emulator.sh`**: Helper scripts to compile the project and launch the emulator (e.g., `emery`). 
-  - *Note:* Both scripts automatically run `pebble clean` before `pebble build` to avoid caching issues with generated C headers (`message_keys.auto.h`).
+- **VS Code Tasks**: The preferred way to build, run, and debug the application is using VS Code's Task interface (`Ctrl+Shift+B` or via Command Palette `Tasks: Run Task`).
+  - **"Run Pebble Emulator"**: Runs `run_emulator.ps1` to compile, boot, install the app, and stream companion logs.
+  - **"Hard Reset Pebble Emulator"**: Runs `run_emulator_hard_reset.ps1` which automatically kills any locked ports/existing processes, cleans up WSL/Windows QEMU helpers, wipes the emulator state, runs a clean build for all targets, boots the device, installs, and streams companion logs.
+  - **"Build Pebble App"**: Runs a standard `pebble build` inside the WSL workspace.
 
 ## Communication (AppMessage)
 
@@ -53,3 +55,4 @@ The C and JS layers communicate using Pebble's `AppMessage` dictionary framework
 - **Emulator Hard Resets:** When wiping the emulator using `pebble wipe`, the QEMU emulator process requires several seconds to fully initialize before it can accept a new `pebble install`. Ensure reset scripts include a delay (e.g., 6 seconds) and/or retry loops.
 - **Layer Z-Ordering:** In Pebble C UI, layers are rendered in the order they are added. For elements like an `ActionBarLayer` to overlay a `ScrollLayer`, the action bar must be added to the root layer *after* the scroll layer, otherwise it will be hidden beneath the scrolling content.
 - **ActionBar Icons & Transparency:** The Pebble SDK does not provide built-in system resource IDs for common icons (like checks or pencils); they must be bundled as PNGs in `resources/images`. Furthermore, `ActionBarLayer` does not magically invert PNG bitmaps. It tints opaque pixels to match the foreground color. Therefore, icons must be designed with solid white pixels on a transparent background. A standard black-on-white PNG will render incorrectly as a solid block.
+- **API Returns Numeric Fields as Strings:** The NirvanaHQ API returns fields like `tag.type` and `task.type` as **strings** (e.g. `"0"`, `"1"`), not JavaScript numbers. Always use loose equality (`==`) when comparing these values in `index.js`, never strict equality (`===`). For example, `tag.type == 1` correctly identifies an Area-of-Focus tag, whereas `tag.type === 1` will silently fail and misclassify all tags. This applies to any numeric field read directly from API JSON objects stored in `tagCache` or `taskCache`.

@@ -53,7 +53,7 @@ function getCredentials() {
         username = devConfig.username;
         password = devConfig.password;
       }
-    } catch (e) {}
+    } catch (e) { }
   }
   return { username: username, password: password };
 }
@@ -200,9 +200,9 @@ function sendTasksToWatch(tasks) {
     var dict = {
       'AppKeyTaskIndex': index,
       'AppKeyTaskCount': maxTasks,
-      'AppKeyTaskName':  trunc(tasks[index].name, 60),
+      'AppKeyTaskName': trunc(tasks[index].name, 60),
       'AppKeyTaskState': tasks[index].state,
-      'AppKeyTaskId':    trunc(tasks[index].id, 60)
+      'AppKeyTaskId': trunc(tasks[index].id, 60)
     };
 
     Pebble.sendAppMessage(dict, function () {
@@ -218,6 +218,40 @@ function sendTasksToWatch(tasks) {
   sendNext();
 }
 
+function splitTags(tagsStr) {
+  if (!tagsStr) return { areas: "", contexts: "" };
+  var parts = tagsStr.split(",");
+  var areas = [];
+  var contexts = [];
+  for (var i = 0; i < parts.length; i++) {
+    var key = parts[i].trim();
+    if (!key) continue;
+    var tag = tagCache[key];
+    if (tag) {
+      if (tag.type == 1) {
+        // type 1 = AREA (e.g. @work, @home)
+        areas.push(key);
+      } else if (tag.type == 2) {
+        // type 2 = CONTACT (e.g. Marilyn, Jason Miller) — skip, don't display on watch
+      } else if (tag.type == 0) {
+        // type 0 = CONTEXT (e.g. #tara, #keystone, calls)
+        contexts.push(key);
+      }
+      // unknown types: silently ignored
+    } else {
+      if (key.charAt(0) === '@') {
+        areas.push(key);
+      } else {
+        contexts.push(key);
+      }
+    }
+  }
+  return {
+    areas: areas.join(", "),
+    contexts: contexts.join(", ")
+  };
+}
+
 function sendDetailToWatch(task) {
   console.log("sendDetailToWatch task object: " + JSON.stringify(task));
   var projectName = "";
@@ -228,7 +262,7 @@ function sendDetailToWatch(task) {
   }
   console.log("sendDetailToWatch resolved projectName: '" + projectName + "' for parentid: '" + task.parentid + "'");
 
-  var tags = formatTags(task.tags);
+  var tagSplit = splitTags(task.tags);
   var due = formatDate(task.duedate);
   var note = trunc(task.note || "", 120);
   var seqt = task.seqt !== undefined ? parseInt(task.seqt, 10) : 0;
@@ -237,25 +271,26 @@ function sendDetailToWatch(task) {
   // We keep the real state value; focus is indicated by seqt on the server side
 
   Pebble.sendAppMessage({
-    'AppKeyTaskDetail':  1,
-    'AppKeyTaskId':      trunc(task.id, 60),
-    'AppKeyTaskName':    trunc(task.name || "", 60),
-    'AppKeyTaskState':   state,
-    'AppKeyTaskNote':    note,
+    'AppKeyTaskDetail': 1,
+    'AppKeyTaskId': trunc(task.id, 60),
+    'AppKeyTaskName': trunc(task.name || "", 60),
+    'AppKeyTaskState': state,
+    'AppKeyTaskNote': note,
     'AppKeyTaskDueDate': due,
-    'AppKeyTaskTags':    tags,
+    'AppKeyTaskTags': trunc(tagSplit.contexts, 60),
+    'AppKeyTaskAreas': trunc(tagSplit.areas, 60),
     'AppKeyTaskProject': trunc(projectName, 60),
-    'AppKeyTaskFocus':   seqt !== 0 ? 1 : 0
-  }, function() {
+    'AppKeyTaskFocus': seqt !== 0 ? 1 : 0
+  }, function () {
     console.log("Detail sent for task: " + task.id);
-  }, function(e) {
+  }, function (e) {
     console.log("Error sending detail: " + JSON.stringify(e));
   });
 }
 
 function apiSave(payload, callback) {
   if (!authToken) {
-    loginIfNeeded(function() { apiSave(payload, callback); });
+    loginIfNeeded(function () { apiSave(payload, callback); });
     return;
   }
   var ts = new Date().getTime();
@@ -290,7 +325,7 @@ function apiSave(payload, callback) {
 
 function createTask(name) {
   if (!authToken) {
-    loginIfNeeded(function() { createTask(name); });
+    loginIfNeeded(function () { createTask(name); });
     return;
   }
 
@@ -325,7 +360,7 @@ function createTask(name) {
   // Store in cache immediately
   taskCache[task_id] = newTask;
 
-  apiSave([newTask], function(err) {
+  apiSave([newTask], function (err) {
     if (!err) {
       console.log("createTask: Task created -> " + task_id);
       // Send detail screen data for the new task
@@ -363,11 +398,13 @@ function completeTask(taskId) {
   var ts = new Date().getTime();
   var ts_sec = Math.floor(ts / 1000);
 
-  var payload = [{ "method": "task.save", "id": taskId,
+  var payload = [{
+    "method": "task.save", "id": taskId,
     "state": 7, "_state": ts_sec, "_state_ms": ts,
-    "completed": ts_sec, "_completed": ts_sec, "_completed_ms": ts }];
+    "completed": ts_sec, "_completed": ts_sec, "_completed_ms": ts
+  }];
 
-  apiSave(payload, function(err) {
+  apiSave(payload, function (err) {
     if (!err) {
       console.log("completeTask: done -> " + taskId);
     }
@@ -381,10 +418,12 @@ function renameTask(taskId, newName) {
   var ts = new Date().getTime();
   var ts_sec = Math.floor(ts / 1000);
 
-  var payload = [{ "method": "task.save", "id": taskId,
-    "name": newName, "_name": ts_sec, "_name_ms": ts }];
+  var payload = [{
+    "method": "task.save", "id": taskId,
+    "name": newName, "_name": ts_sec, "_name_ms": ts
+  }];
 
-  apiSave(payload, function(err) {
+  apiSave(payload, function (err) {
     if (!err) {
       // Update local cache
       taskCache[taskId].name = newName;
@@ -407,11 +446,13 @@ function changeTaskState(taskId, newState) {
   var actualState = isFocus ? 1 : newState; // Move to Next if focused
   var newSeqt = isFocus ? ts_sec : 0;
 
-  var payload = [{ "method": "task.save", "id": taskId,
+  var payload = [{
+    "method": "task.save", "id": taskId,
     "state": actualState, "_state": ts_sec, "_state_ms": ts,
-    "seqt": newSeqt, "_seqt": ts_sec, "_seqt_ms": ts }];
+    "seqt": newSeqt, "_seqt": ts_sec, "_seqt_ms": ts
+  }];
 
-  apiSave(payload, function(err) {
+  apiSave(payload, function (err) {
     if (!err) {
       taskCache[taskId].state = actualState;
       taskCache[taskId].seqt = newSeqt;
@@ -464,7 +505,7 @@ function editTaskField(taskId, field, value) {
     }
   }
 
-  apiSave(payload, function(err) {
+  apiSave(payload, function (err) {
     if (!err) {
       if (field === 'tags') {
         taskCache[taskId].tags = payload[0]["tags"];
@@ -500,10 +541,10 @@ function sendListToWatch(items, listType) {
       'AppKeyListItemName': trunc(items[index].name, 60),
       'AppKeyListItemId': trunc(items[index].id, 60)
     };
-    Pebble.sendAppMessage(dict, function() {
+    Pebble.sendAppMessage(dict, function () {
       index++;
       sendNext();
-    }, function(e) {
+    }, function (e) {
       console.log('Error sending list item ' + index);
       index++;
       sendNext();
@@ -538,7 +579,7 @@ Pebble.addEventListener('appmessage', function (e) {
           createTask(devConfig.mock_dictation);
           return;
         }
-      } catch (err) {}
+      } catch (err) { }
     }
     Pebble.sendAppMessage({ 'AppKeyStartDictation': 1 });
   }
@@ -553,28 +594,28 @@ Pebble.addEventListener('appmessage', function (e) {
           names[taskCache[id].name] = 1;
         }
       }
-      for (var name in names) items.push({name: name, id: name});
+      for (var name in names) items.push({ name: name, id: name });
     } else if (listType === 1) { // Area
       for (var key in tagCache) {
         if (tagCache[key].type == 1) { // 1 = Area of Focus in reality
-          items.push({name: key, id: key});
+          items.push({ name: key, id: key });
         }
       }
       for (var id in taskCache) {
         if (taskCache[id].type == 4) {
-          items.push({name: taskCache[id].name, id: id});
+          items.push({ name: taskCache[id].name, id: id });
         }
       }
     } else if (listType === 2) { // Tags
       for (var key in tagCache) {
         if (tagCache[key].type == 0 || tagCache[key].type == 2) { // 0 = Context, 2 = Contact
-          items.push({name: key, id: key});
+          items.push({ name: key, id: key });
         }
       }
     } else if (listType === 3) { // Project
       console.log("Requesting project list. Current projectCache size: " + Object.keys(projectCache).length);
       for (var id in projectCache) {
-        items.push({name: projectCache[id], id: id});
+        items.push({ name: projectCache[id], id: id });
       }
       console.log("Projects found for watch list: " + JSON.stringify(items));
     }
@@ -582,7 +623,7 @@ Pebble.addEventListener('appmessage', function (e) {
   }
 
   if (p.AppKeyTaskId !== undefined && p.AppKeyCompleteTask === undefined &&
-      p.AppKeyRenameTask === undefined && p.AppKeyChangeTaskState === undefined) {
+    p.AppKeyRenameTask === undefined && p.AppKeyChangeTaskState === undefined) {
     // Watch requesting task detail
     sendDetailById(p.AppKeyTaskId);
   }
