@@ -40,10 +40,25 @@ static SimpleMenuLayer *s_status_menu_layer;
 static SimpleMenuSection s_status_section;
 static SimpleMenuItem s_status_items[5];
 
+// --- Edit Menu Window ---
+static Window *s_edit_window;
+static SimpleMenuLayer *s_edit_menu_layer;
+static SimpleMenuSection s_edit_section;
+static SimpleMenuItem s_edit_items[4];
+
+// --- List Window ---
+static Window *s_list_window;
+static MenuLayer *s_list_menu_layer;
+static char s_list_items[MAX_TASKS][MAX_TASK_NAME_LENGTH];
+static char s_list_ids[MAX_TASKS][MAX_TASK_ID_LENGTH];
+static int s_list_num_items = 0;
+static int s_list_type = 0; // 0=Title, 1=Area, 2=Tags, 3=Project
+
 // --- Dictation ---
 static DictationSession *s_dictation_session;
 static char s_dictation_text[512];
 static bool s_dictation_is_rename = false;
+static int s_edit_mode = 0; // 0=Title, 1=Area, 2=Tags, 3=Project
 static bool s_action_mode = false;
 
 // --- Done / Completion Animation Window ---
@@ -69,9 +84,11 @@ static char s_detail_due[32];
 static char s_detail_tags[DETAIL_BUF_SIZE];
 static char s_detail_project[MAX_TASK_NAME_LENGTH];
 static int  s_detail_state = 0;
+static int  s_detail_focus = 0;
 
 // Built display string buffers
 static char s_buf_project[DETAIL_BUF_SIZE + 16];
+static char s_buf_status[32];
 static char s_buf_due[48];
 
 // ==================== HELPERS ====================
@@ -129,7 +146,15 @@ static void dictation_session_callback(DictationSession *session,
     DictionaryIterator *iter;
     if (s_dictation_is_rename) {
       app_message_outbox_begin(&iter);
-      dict_write_cstring(iter, MESSAGE_KEY_AppKeyRenameTask, transcription);
+      if (s_edit_mode == 0) {
+        dict_write_cstring(iter, MESSAGE_KEY_AppKeyRenameTask, transcription);
+      } else if (s_edit_mode == 1) {
+        dict_write_cstring(iter, MESSAGE_KEY_AppKeyEditArea, transcription);
+      } else if (s_edit_mode == 2) {
+        dict_write_cstring(iter, MESSAGE_KEY_AppKeyEditTags, transcription);
+      } else if (s_edit_mode == 3) {
+        dict_write_cstring(iter, MESSAGE_KEY_AppKeyEditProject, transcription);
+      }
       dict_write_cstring(iter, MESSAGE_KEY_AppKeyTaskId, s_detail_id);
       app_message_outbox_send();
     } else {
@@ -138,6 +163,107 @@ static void dictation_session_callback(DictationSession *session,
       app_message_outbox_send();
     }
   }
+}
+
+// ==================== LIST WINDOW ====================
+
+static uint16_t list_menu_get_num_rows_callback(MenuLayer *menu_layer, uint16_t section_index, void *data) {
+  return s_list_num_items;
+}
+
+static void list_menu_draw_row_callback(GContext* ctx, const Layer *cell_layer, MenuIndex *cell_index, void *data) {
+  menu_cell_basic_draw(ctx, cell_layer, s_list_items[cell_index->row], NULL, NULL);
+}
+
+static void list_menu_select_callback(MenuLayer *menu_layer, MenuIndex *cell_index, void *data) {
+  DictionaryIterator *iter;
+  app_message_outbox_begin(&iter);
+  dict_write_cstring(iter, MESSAGE_KEY_AppKeyTaskId, s_detail_id);
+  
+  if (s_list_type == 0) {
+    dict_write_cstring(iter, MESSAGE_KEY_AppKeyRenameTask, s_list_items[cell_index->row]);
+  } else if (s_list_type == 1) {
+    dict_write_cstring(iter, MESSAGE_KEY_AppKeyEditArea, s_list_ids[cell_index->row]);
+  } else if (s_list_type == 2) {
+    dict_write_cstring(iter, MESSAGE_KEY_AppKeyEditTags, s_list_items[cell_index->row]);
+  } else if (s_list_type == 3) {
+    dict_write_cstring(iter, MESSAGE_KEY_AppKeyEditProject, s_list_ids[cell_index->row]);
+  }
+  
+  app_message_outbox_send();
+  window_stack_pop(true); // pop list
+  window_stack_pop(true); // pop edit menu
+}
+
+static void list_window_load(Window *window) {
+  Layer *window_layer = window_get_root_layer(window);
+  GRect bounds = layer_get_bounds(window_layer);
+
+  s_list_menu_layer = menu_layer_create(bounds);
+  menu_layer_set_callbacks(s_list_menu_layer, NULL, (MenuLayerCallbacks){
+    .get_num_rows = list_menu_get_num_rows_callback,
+    .draw_row = list_menu_draw_row_callback,
+    .select_click = list_menu_select_callback,
+  });
+  menu_layer_set_click_config_onto_window(s_list_menu_layer, window);
+  layer_add_child(window_layer, menu_layer_get_layer(s_list_menu_layer));
+}
+
+static void list_window_unload(Window *window) {
+  menu_layer_destroy(s_list_menu_layer);
+}
+
+static void request_list(int type) {
+  s_list_type = type;
+  s_list_num_items = 0;
+  if (s_list_menu_layer) {
+    menu_layer_reload_data(s_list_menu_layer);
+  }
+  DictionaryIterator *iter;
+  app_message_outbox_begin(&iter);
+  dict_write_int32(iter, MESSAGE_KEY_AppKeyRequestList, type);
+  app_message_outbox_send();
+  window_stack_push(s_list_window, true);
+}
+
+// ==================== EDIT MENU WINDOW ====================
+
+static void edit_title_cb(int index, void *ctx) {
+  request_list(0);
+}
+
+static void edit_area_cb(int index, void *ctx) {
+  request_list(1);
+}
+
+static void edit_tags_cb(int index, void *ctx) {
+  request_list(2);
+}
+
+static void edit_project_cb(int index, void *ctx) {
+  request_list(3);
+}
+
+static void edit_window_load(Window *window) {
+  s_edit_items[0] = (SimpleMenuItem){ .title = "Edit Title",   .callback = edit_title_cb };
+  s_edit_items[1] = (SimpleMenuItem){ .title = "Edit Area",    .callback = edit_area_cb };
+  s_edit_items[2] = (SimpleMenuItem){ .title = "Edit Tags",    .callback = edit_tags_cb };
+  s_edit_items[3] = (SimpleMenuItem){ .title = "Edit Project", .callback = edit_project_cb };
+
+  s_edit_section = (SimpleMenuSection){
+    .title = "Edit Task",
+    .items = s_edit_items,
+    .num_items = 4
+  };
+
+  Layer *root = window_get_root_layer(window);
+  GRect bounds = layer_get_bounds(root);
+  s_edit_menu_layer = simple_menu_layer_create(bounds, window, &s_edit_section, 1, NULL);
+  layer_add_child(root, simple_menu_layer_get_layer(s_edit_menu_layer));
+}
+
+static void edit_window_unload(Window *window) {
+  simple_menu_layer_destroy(s_edit_menu_layer);
 }
 
 // ==================== STATUS PICKER ====================
@@ -315,8 +441,7 @@ static void action_up_click(ClickRecognizerRef r, void *ctx) {
 }
 static void action_select_click(ClickRecognizerRef r, void *ctx) {
   exit_action_mode();
-  s_dictation_is_rename = true;
-  dictation_session_start(s_dictation_session);
+  window_stack_push(s_edit_window, true);
 }
 static void action_down_click(ClickRecognizerRef r, void *ctx) {
   exit_action_mode();
@@ -339,7 +464,14 @@ static void detail_refresh_layers(void) {
   text_layer_set_text(s_detail_title_layer, s_detail_name);
 
   // Status: bold text, no prefix label
-  text_layer_set_text(s_detail_status_label, state_name(s_detail_state));
+  if (s_detail_focus) {
+    snprintf(s_buf_status, sizeof(s_buf_status), "\u2605 %s", state_name(s_detail_state));
+    text_layer_set_text(s_detail_status_label, s_buf_status);
+    text_layer_set_text_color(s_detail_status_label, GColorYellow);
+  } else {
+    text_layer_set_text(s_detail_status_label, state_name(s_detail_state));
+    text_layer_set_text_color(s_detail_status_label, GColorBlack);
+  }
 
   // Tags: no prefix label; show dash if empty
   text_layer_set_text(s_detail_tags_label, s_detail_tags[0] ? s_detail_tags : "-");
@@ -699,16 +831,45 @@ static void inbox_received_callback(DictionaryIterator *iterator, void *context)
   Tuple *id_tuple            = dict_find(iterator, MESSAGE_KEY_AppKeyTaskId);
   Tuple *start_dict_tuple    = dict_find(iterator, MESSAGE_KEY_AppKeyStartDictation);
   Tuple *detail_tuple        = dict_find(iterator, MESSAGE_KEY_AppKeyTaskDetail);
+  Tuple *focus_tuple         = dict_find(iterator, MESSAGE_KEY_AppKeyTaskFocus);
   Tuple *note_tuple          = dict_find(iterator, MESSAGE_KEY_AppKeyTaskNote);
   Tuple *due_tuple           = dict_find(iterator, MESSAGE_KEY_AppKeyTaskDueDate);
   Tuple *tags_tuple          = dict_find(iterator, MESSAGE_KEY_AppKeyTaskTags);
   Tuple *project_tuple       = dict_find(iterator, MESSAGE_KEY_AppKeyTaskProject);
+
+  Tuple *list_count_tuple    = dict_find(iterator, MESSAGE_KEY_AppKeyListCount);
+  Tuple *list_index_tuple    = dict_find(iterator, MESSAGE_KEY_AppKeyListIndex);
+  Tuple *list_name_tuple     = dict_find(iterator, MESSAGE_KEY_AppKeyListItemName);
+  Tuple *list_id_tuple       = dict_find(iterator, MESSAGE_KEY_AppKeyListItemId);
+
+  // List data arriving
+  if (list_count_tuple && list_index_tuple && list_name_tuple) {
+    int index = list_index_tuple->value->int32;
+    if (index == 0) s_list_num_items = 0;
+    
+    if (index < MAX_TASKS) {
+      strncpy(s_list_items[index], list_name_tuple->value->cstring, MAX_TASK_NAME_LENGTH - 1);
+      s_list_items[index][MAX_TASK_NAME_LENGTH - 1] = '\0';
+      if (list_id_tuple) {
+        strncpy(s_list_ids[index], list_id_tuple->value->cstring, MAX_TASK_ID_LENGTH - 1);
+        s_list_ids[index][MAX_TASK_ID_LENGTH - 1] = '\0';
+      }
+      if (index + 1 > s_list_num_items) {
+        s_list_num_items = index + 1;
+      }
+      if (s_list_menu_layer) {
+        menu_layer_reload_data(s_list_menu_layer);
+      }
+    }
+    return;
+  }
 
   // Detail data arriving (new task created OR task selected)
   if (detail_tuple) {
     if (name_tuple)    { strncpy(s_detail_name,    name_tuple->value->cstring,    MAX_TASK_NAME_LENGTH - 1); }
     if (id_tuple)      { strncpy(s_detail_id,      id_tuple->value->cstring,      MAX_TASK_ID_LENGTH - 1); }
     if (state_tuple)   { s_detail_state = state_tuple->value->int32; }
+    if (focus_tuple)   { s_detail_focus = focus_tuple->value->int32; } else { s_detail_focus = 0; }
     if (note_tuple)    { strncpy(s_detail_note,    note_tuple->value->cstring,    DETAIL_BUF_SIZE - 1); }
     if (due_tuple)     { strncpy(s_detail_due,     due_tuple->value->cstring,     sizeof(s_detail_due) - 1); }
     if (tags_tuple)    { strncpy(s_detail_tags,    tags_tuple->value->cstring,    DETAIL_BUF_SIZE - 1); }
@@ -801,6 +962,20 @@ static void init(void) {
     .unload = main_window_unload,
   });
 
+  // Edit menu window
+  s_edit_window = window_create();
+  window_set_window_handlers(s_edit_window, (WindowHandlers){
+    .load   = edit_window_load,
+    .unload = edit_window_unload,
+  });
+
+  // List window
+  s_list_window = window_create();
+  window_set_window_handlers(s_list_window, (WindowHandlers){
+    .load   = list_window_load,
+    .unload = list_window_unload,
+  });
+
   // Tasks list window
   s_tasks_window = window_create();
   window_set_window_handlers(s_tasks_window, (WindowHandlers){
@@ -851,14 +1026,15 @@ static void init(void) {
 static void deinit(void) {
   stop_scroll_timer();
   gbitmap_destroy(s_icon_complete);
-  gbitmap_destroy(s_icon_edit);
-  gbitmap_destroy(s_icon_status);
+  window_destroy(s_done_window);
+  window_destroy(s_status_window);
+  window_destroy(s_edit_window);
+  window_destroy(s_list_window);
   dictation_session_destroy(s_dictation_session);
   window_destroy(s_main_window);
   window_destroy(s_tasks_window);
   window_destroy(s_detail_window);
   window_destroy(s_status_window);
-  window_destroy(s_done_window);
 }
 
 int main(void) {

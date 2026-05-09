@@ -12,6 +12,8 @@ var authToken = null;
 var taskCache = {};
 // Cache of project name lookup by task id
 var projectCache = {};
+// Cache of tags
+var tagCache = {};
 
 function uuidv4() {
   return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function (c) {
@@ -138,8 +140,9 @@ function fetchTasks(viewType) {
       // Reset caches
       taskCache = {};
       projectCache = {};
+      tagCache = {};
 
-      // First pass: build project name lookup
+      // First pass: build lookups
       for (var i = 0; i < results.length; i++) {
         if (results[i].task) {
           var t = results[i].task;
@@ -147,6 +150,8 @@ function fetchTasks(viewType) {
             projectCache[t.id] = t.name;
           }
           taskCache[t.id] = t;
+        } else if (results[i].tag) {
+          tagCache[results[i].tag.key] = results[i].tag;
         }
       }
 
@@ -213,7 +218,13 @@ function sendTasksToWatch(tasks) {
 }
 
 function sendDetailToWatch(task) {
-  var projectName = task.parentid ? (projectCache[task.parentid] || "") : "";
+  var projectName = "";
+  if (task.parentid && taskCache[task.parentid]) {
+    projectName = taskCache[task.parentid].name;
+  } else if (task.parentid && projectCache[task.parentid]) {
+    projectName = projectCache[task.parentid];
+  }
+
   var tags = formatTags(task.tags);
   var due = formatDate(task.duedate);
   var note = trunc(task.note || "", 120);
@@ -261,6 +272,8 @@ function apiSave(payload, callback) {
       for (var i = 0; i < results.length; i++) {
         if (results[i].task) {
           taskCache[results[i].task.id] = results[i].task;
+        } else if (results[i].tag) {
+          tagCache[results[i].tag.key] = results[i].tag;
         }
       }
       if (callback) callback(null);
@@ -387,7 +400,7 @@ function changeTaskState(taskId, newState) {
   var ts_sec = Math.floor(ts / 1000);
 
   var isFocus = (newState === -1);
-  var actualState = isFocus ? (task.state !== undefined ? parseInt(task.state, 10) : 0) : newState;
+  var actualState = isFocus ? 1 : newState; // Move to Next if focused
   var newSeqt = isFocus ? ts_sec : 0;
 
   var payload = [{ "method": "task.save", "id": taskId,
@@ -403,6 +416,92 @@ function changeTaskState(taskId, newState) {
       console.log("changeTaskState error");
     }
   });
+}
+
+function editTaskField(taskId, field, value) {
+  var task = taskCache[taskId];
+  if (!task) return;
+
+  var ts = new Date().getTime();
+  var ts_sec = Math.floor(ts / 1000);
+  var payload = [{ "method": "task.save", "id": taskId }];
+
+  if (field === 'tags') {
+    var tags = taskCache[taskId].tags || "";
+    if (tags.indexOf("," + value + ",") === -1) {
+      tags = tags + value + ",";
+      if (tags.charAt(0) !== ',') tags = "," + tags;
+    }
+    payload[0]["tags"] = tags;
+    payload[0]["_tags"] = ts_sec;
+    payload[0]["_tags_ms"] = ts;
+  } else if (field === 'project') {
+    payload[0]["parentid"] = value;
+    payload[0]["_parentid"] = ts_sec;
+    payload[0]["_parentid_ms"] = ts;
+  } else if (field === 'area') {
+    if (value.length > 20) {
+      payload[0]["parentid"] = value;
+      payload[0]["_parentid"] = ts_sec;
+      payload[0]["_parentid_ms"] = ts;
+    } else {
+      var tags = taskCache[taskId].tags || "";
+      if (tags.indexOf("," + value + ",") === -1) {
+        tags = tags + value + ",";
+        if (tags.charAt(0) !== ',') tags = "," + tags;
+      }
+      payload[0]["tags"] = tags;
+      payload[0]["_tags"] = ts_sec;
+      payload[0]["_tags_ms"] = ts;
+    }
+  }
+
+  apiSave(payload, function(err) {
+    if (!err) {
+      if (field === 'tags') {
+        taskCache[taskId].tags = payload[0]["tags"];
+      } else if (field === 'project') {
+        taskCache[taskId].parentid = payload[0]["parentid"];
+      } else if (field === 'area') {
+        if (payload[0]["parentid"]) {
+          taskCache[taskId].parentid = payload[0]["parentid"];
+        } else if (payload[0]["tags"]) {
+          taskCache[taskId].tags = payload[0]["tags"];
+        }
+      }
+      sendDetailToWatch(taskCache[taskId]);
+    }
+  });
+}
+
+function sendListToWatch(items, listType) {
+  var index = 0;
+  var maxItems = Math.min(items.length, 20);
+
+  if (maxItems === 0) {
+    Pebble.sendAppMessage({ 'AppKeyListCount': 0, 'AppKeyListType': listType, 'AppKeyListIndex': 0, 'AppKeyListItemName': 'No items' });
+    return;
+  }
+
+  function sendNext() {
+    if (index >= maxItems) return;
+    var dict = {
+      'AppKeyListType': listType,
+      'AppKeyListIndex': index,
+      'AppKeyListCount': maxItems,
+      'AppKeyListItemName': trunc(items[index].name, 60),
+      'AppKeyListItemId': trunc(items[index].id, 60)
+    };
+    Pebble.sendAppMessage(dict, function() {
+      index++;
+      sendNext();
+    }, function(e) {
+      console.log('Error sending list item ' + index);
+      index++;
+      sendNext();
+    });
+  }
+  sendNext();
 }
 
 Pebble.addEventListener('ready', function (e) {
@@ -436,6 +535,42 @@ Pebble.addEventListener('appmessage', function (e) {
     Pebble.sendAppMessage({ 'AppKeyStartDictation': 1 });
   }
 
+  if (p.AppKeyRequestList !== undefined) {
+    var listType = p.AppKeyRequestList;
+    var items = [];
+    if (listType === 0) { // Title
+      var names = {};
+      for (var id in taskCache) {
+        if (taskCache[id].type == 0 && taskCache[id].name) {
+          names[taskCache[id].name] = 1;
+        }
+      }
+      for (var name in names) items.push({name: name, id: name});
+    } else if (listType === 1) { // Area
+      for (var key in tagCache) {
+        if (tagCache[key].type == 1) { // 1 = Area of Focus in reality
+          items.push({name: key, id: key});
+        }
+      }
+      for (var id in taskCache) {
+        if (taskCache[id].type == 4) {
+          items.push({name: taskCache[id].name, id: id});
+        }
+      }
+    } else if (listType === 2) { // Tags
+      for (var key in tagCache) {
+        if (tagCache[key].type == 0 || tagCache[key].type == 2) { // 0 = Context, 2 = Contact
+          items.push({name: key, id: key});
+        }
+      }
+    } else if (listType === 3) { // Project
+      for (var id in projectCache) {
+        items.push({name: projectCache[id], id: id});
+      }
+    }
+    sendListToWatch(items, listType);
+  }
+
   if (p.AppKeyTaskId !== undefined && p.AppKeyCompleteTask === undefined &&
       p.AppKeyRenameTask === undefined && p.AppKeyChangeTaskState === undefined) {
     // Watch requesting task detail
@@ -448,6 +583,18 @@ Pebble.addEventListener('appmessage', function (e) {
 
   if (p.AppKeyRenameTask !== undefined && p.AppKeyTaskId !== undefined) {
     renameTask(p.AppKeyTaskId, p.AppKeyRenameTask);
+  }
+
+  if (p.AppKeyEditTags !== undefined && p.AppKeyTaskId !== undefined) {
+    editTaskField(p.AppKeyTaskId, 'tags', p.AppKeyEditTags);
+  }
+
+  if (p.AppKeyEditProject !== undefined && p.AppKeyTaskId !== undefined) {
+    editTaskField(p.AppKeyTaskId, 'project', p.AppKeyEditProject);
+  }
+
+  if (p.AppKeyEditArea !== undefined && p.AppKeyTaskId !== undefined) {
+    editTaskField(p.AppKeyTaskId, 'area', p.AppKeyEditArea);
   }
 
   if (p.AppKeyChangeTaskState !== undefined && p.AppKeyTaskId !== undefined) {

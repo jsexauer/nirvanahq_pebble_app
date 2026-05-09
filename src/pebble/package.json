@@ -49,9 +49,19 @@
       "AppKeyTaskTags",
       "AppKeyTaskProject",
       "AppKeyTaskDetail",
+      "AppKeyTaskFocus",
       "AppKeyCompleteTask",
       "AppKeyRenameTask",
-      "AppKeyChangeTaskState"
+      "AppKeyEditArea",
+      "AppKeyEditTags",
+      "AppKeyEditProject",
+      "AppKeyChangeTaskState",
+      "AppKeyRequestList",
+      "AppKeyListType",
+      "AppKeyListCount",
+      "AppKeyListIndex",
+      "AppKeyListItemName",
+      "AppKeyListItemId"
     ],
     "resources": {
       "media": [
