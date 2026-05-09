@@ -474,12 +474,87 @@ static void detail_window_push(void) {
 
 // ==================== TASKS LIST WINDOW ====================
 
+static AppTimer *s_scroll_timer = NULL;
+static int s_scroll_offset = 0;
+
+static void scroll_timer_handler(void *data) {
+  s_scroll_offset++;
+  if (s_tasks_menu_layer) {
+    layer_mark_dirty(menu_layer_get_layer(s_tasks_menu_layer));
+  }
+  s_scroll_timer = app_timer_register(30, scroll_timer_handler, NULL);
+}
+
+static void start_scroll_timer(void) {
+  s_scroll_offset = 0;
+  if (!s_scroll_timer) {
+    s_scroll_timer = app_timer_register(30, scroll_timer_handler, NULL);
+  }
+}
+
+static void stop_scroll_timer(void) {
+  if (s_scroll_timer) {
+    app_timer_cancel(s_scroll_timer);
+    s_scroll_timer = NULL;
+  }
+}
+
+static void draw_scrolling_menu_cell(GContext *ctx, const Layer *cell_layer, const char *text, bool is_selected) {
+  GRect bounds = layer_get_bounds(cell_layer);
+  
+  // Set text color matching the highlight state
+  GColor text_color = is_selected ? GColorWhite : GColorBlack;
+  graphics_context_set_text_color(ctx, text_color);
+  
+  GFont font = fonts_get_system_font(FONT_KEY_GOTHIC_24_BOLD);
+  
+  // Measure text width
+  GSize text_size = graphics_text_layout_get_content_size(text, font, 
+    GRect(0, 0, 1000, bounds.size.h), GTextOverflowModeFill, GTextAlignmentLeft);
+  
+  int text_margin = 8;
+  int available_width = bounds.size.w - (text_margin * 2);
+  
+  if (is_selected && text_size.w > available_width) {
+    int max_scroll = text_size.w - available_width;
+    int scroll_ticks = (max_scroll + 1) / 2; // Move 2 pixels per tick, so we need half as many ticks
+    
+    // Smooth scroll configuration - scaled to 30ms ticks
+    int pause_start = 17; // ~0.5 seconds pause at start (17 * 30ms)
+    int pause_end = 40;   // ~1.2 seconds pause at end (40 * 30ms)
+    int reset_gap = 30;   // Pause before wrap-around
+    int period = pause_start + scroll_ticks + pause_end + reset_gap;
+    int tick = s_scroll_offset % period;
+    
+    int draw_offset = 0;
+    if (tick < pause_start) {
+      draw_offset = 0;
+    } else if (tick < pause_start + scroll_ticks) {
+      draw_offset = (tick - pause_start) * 2;
+      if (draw_offset > max_scroll) {
+        draw_offset = max_scroll;
+      }
+    } else {
+      draw_offset = max_scroll;
+    }
+    
+    // Draw the text horizontally offset by draw_offset
+    GRect text_rect = GRect(text_margin - draw_offset, (bounds.size.h - 28) / 2, text_size.w, 28);
+    graphics_draw_text(ctx, text, font, text_rect, GTextOverflowModeFill, GTextAlignmentLeft, NULL);
+  } else {
+    // Normal drawing with trailing ellipsis if not selected or fits
+    GRect text_rect = GRect(text_margin, (bounds.size.h - 28) / 2, available_width, 28);
+    graphics_draw_text(ctx, text, font, text_rect, GTextOverflowModeTrailingEllipsis, GTextAlignmentLeft, NULL);
+  }
+}
+
 static uint16_t tasks_menu_get_num_rows_callback(MenuLayer *menu_layer, uint16_t section_index, void *data) {
   return s_num_tasks;
 }
 
 static void tasks_menu_draw_row_callback(GContext* ctx, const Layer *cell_layer, MenuIndex *cell_index, void *data) {
-  menu_cell_basic_draw(ctx, cell_layer, s_tasks[cell_index->row], NULL, NULL);
+  bool is_selected = menu_cell_layer_is_highlighted(cell_layer);
+  draw_scrolling_menu_cell(ctx, cell_layer, s_tasks[cell_index->row], is_selected);
 }
 
 static void tasks_menu_select_callback(MenuLayer *menu_layer, MenuIndex *cell_index, void *data) {
@@ -494,6 +569,10 @@ static void tasks_menu_select_callback(MenuLayer *menu_layer, MenuIndex *cell_in
 
   detail_window_push();
   request_detail();
+}
+
+static void tasks_menu_selection_changed_callback(MenuLayer *menu_layer, MenuIndex new_index, MenuIndex old_index, void *callback_context) {
+  s_scroll_offset = 0;
 }
 
 static void tasks_window_load(Window *window) {
@@ -519,6 +598,7 @@ static void tasks_window_load(Window *window) {
     .get_num_rows = tasks_menu_get_num_rows_callback,
     .draw_row = tasks_menu_draw_row_callback,
     .select_click = tasks_menu_select_callback,
+    .selection_changed = tasks_menu_selection_changed_callback,
   });
   menu_layer_set_click_config_onto_window(s_tasks_menu_layer, window);
   layer_add_child(window_layer, menu_layer_get_layer(s_tasks_menu_layer));
@@ -529,6 +609,14 @@ static void tasks_window_unload(Window *window) {
   menu_layer_destroy(s_tasks_menu_layer);
   text_layer_destroy(s_loading_layer);
   text_layer_destroy(s_tasks_status_bar_layer);
+}
+
+static void tasks_window_appear(Window *window) {
+  start_scroll_timer();
+}
+
+static void tasks_window_disappear(Window *window) {
+  stop_scroll_timer();
 }
 
 // ==================== MAIN MENU WINDOW ====================
@@ -716,8 +804,10 @@ static void init(void) {
   // Tasks list window
   s_tasks_window = window_create();
   window_set_window_handlers(s_tasks_window, (WindowHandlers){
-    .load   = tasks_window_load,
-    .unload = tasks_window_unload,
+    .load      = tasks_window_load,
+    .unload    = tasks_window_unload,
+    .appear    = tasks_window_appear,
+    .disappear = tasks_window_disappear,
   });
 
   // Detail window
@@ -759,6 +849,7 @@ static void init(void) {
 }
 
 static void deinit(void) {
+  stop_scroll_timer();
   gbitmap_destroy(s_icon_complete);
   gbitmap_destroy(s_icon_edit);
   gbitmap_destroy(s_icon_status);
