@@ -241,7 +241,8 @@ function sendDetailToWatch(task) {
     'AppKeyTaskNote':    note,
     'AppKeyTaskDueDate': due,
     'AppKeyTaskTags':    tags,
-    'AppKeyTaskProject': trunc(projectName, 60)
+    'AppKeyTaskProject': trunc(projectName, 60),
+    'AppKeyTaskFocus':   seqt !== 0 ? 1 : 0
   }, function() {
     console.log("Detail sent for task: " + task.id);
   }, function(e) {
