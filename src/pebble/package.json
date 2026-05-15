@@ -53,6 +53,7 @@
       "AppKeyTaskFocus",
       "AppKeyCompleteTask",
       "AppKeyRenameTask",
+      "AppKeyEditNote",
       "AppKeyEditArea",
       "AppKeyEditTags",
       "AppKeyEditProject",

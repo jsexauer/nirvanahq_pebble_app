@@ -45,7 +45,7 @@ static SimpleMenuItem s_status_items[5];
 static Window *s_edit_window;
 static SimpleMenuLayer *s_edit_menu_layer;
 static SimpleMenuSection s_edit_section;
-static SimpleMenuItem s_edit_items[4];
+static SimpleMenuItem s_edit_items[5];
 
 // --- List Window ---
 static Window *s_list_window;
@@ -156,6 +156,8 @@ static void dictation_session_callback(DictationSession *session,
         dict_write_cstring(iter, MESSAGE_KEY_AppKeyEditTags, transcription);
       } else if (s_edit_mode == 3) {
         dict_write_cstring(iter, MESSAGE_KEY_AppKeyEditProject, transcription);
+      } else if (s_edit_mode == 4) {
+        dict_write_cstring(iter, MESSAGE_KEY_AppKeyEditNote, transcription);
       }
       dict_write_cstring(iter, MESSAGE_KEY_AppKeyTaskId, s_detail_id);
       app_message_outbox_send();
@@ -246,16 +248,23 @@ static void edit_project_cb(int index, void *ctx) {
   request_list(3);
 }
 
+static void edit_desc_cb(int index, void *ctx) {
+  s_dictation_is_rename = true;
+  s_edit_mode = 4; // 4 = Description/Note
+  dictation_session_start(s_dictation_session);
+}
+
 static void edit_window_load(Window *window) {
   s_edit_items[0] = (SimpleMenuItem){ .title = "Edit Title",   .callback = edit_title_cb };
   s_edit_items[1] = (SimpleMenuItem){ .title = "Edit Area",    .callback = edit_area_cb };
   s_edit_items[2] = (SimpleMenuItem){ .title = "Edit Tags",    .callback = edit_tags_cb };
   s_edit_items[3] = (SimpleMenuItem){ .title = "Edit Project", .callback = edit_project_cb };
+  s_edit_items[4] = (SimpleMenuItem){ .title = "Edit Description", .callback = edit_desc_cb };
 
   s_edit_section = (SimpleMenuSection){
     .title = "Edit Task",
     .items = s_edit_items,
-    .num_items = 4
+    .num_items = 5
   };
 
   Layer *root = window_get_root_layer(window);
@@ -803,6 +812,11 @@ static void tasks_window_unload(Window *window) {
 
 static void tasks_window_appear(Window *window) {
   start_scroll_timer();
+  if (s_js_ready) {
+    request_tasks();
+  } else {
+    s_pending_task_request = true;
+  }
 }
 
 static void tasks_window_disappear(Window *window) {
@@ -841,11 +855,6 @@ static void main_menu_select_callback(MenuLayer *menu_layer, MenuIndex *cell_ind
     case 4:
       s_current_view = cell_index->row - 1;
       window_stack_push(s_tasks_window, true);
-      if (s_js_ready) {
-        request_tasks();
-      } else {
-        s_pending_task_request = true;
-      }
       break;
   }
 }

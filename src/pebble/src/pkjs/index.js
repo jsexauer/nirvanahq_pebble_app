@@ -503,6 +503,10 @@ function editTaskField(taskId, field, value) {
       payload[0]["_tags"] = ts_sec;
       payload[0]["_tags_ms"] = ts;
     }
+  } else if (field === 'note') {
+    payload[0]["note"] = value;
+    payload[0]["_note"] = ts_sec;
+    payload[0]["_note_ms"] = ts;
   }
 
   apiSave(payload, function (err) {
@@ -517,6 +521,8 @@ function editTaskField(taskId, field, value) {
         } else if (payload[0]["tags"]) {
           taskCache[taskId].tags = payload[0]["tags"];
         }
+      } else if (field === 'note') {
+        taskCache[taskId].note = payload[0]["note"];
       }
       sendDetailToWatch(taskCache[taskId]);
     }
@@ -638,6 +644,10 @@ Pebble.addEventListener('appmessage', function (e) {
 
   if (p.AppKeyEditTags !== undefined && p.AppKeyTaskId !== undefined) {
     editTaskField(p.AppKeyTaskId, 'tags', p.AppKeyEditTags);
+  }
+
+  if (p.AppKeyEditNote !== undefined && p.AppKeyTaskId !== undefined) {
+    editTaskField(p.AppKeyTaskId, 'note', p.AppKeyEditNote);
   }
 
   if (p.AppKeyEditProject !== undefined && p.AppKeyTaskId !== undefined) {
