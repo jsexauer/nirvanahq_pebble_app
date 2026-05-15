@@ -812,6 +812,15 @@ static void tasks_window_unload(Window *window) {
 
 static void tasks_window_appear(Window *window) {
   start_scroll_timer();
+  
+  switch (s_current_view) {
+    case 0: text_layer_set_text(s_tasks_status_bar_layer, "Inbox"); break;
+    case 1: text_layer_set_text(s_tasks_status_bar_layer, "Focus"); break;
+    case 2: text_layer_set_text(s_tasks_status_bar_layer, "Next"); break;
+    case 3: text_layer_set_text(s_tasks_status_bar_layer, "Waiting"); break;
+    default: text_layer_set_text(s_tasks_status_bar_layer, "Tasks"); break;
+  }
+
   if (s_js_ready) {
     request_tasks();
   } else {
