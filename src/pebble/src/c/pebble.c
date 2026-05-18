@@ -45,7 +45,7 @@ static SimpleMenuItem s_status_items[5];
 static Window *s_edit_window;
 static SimpleMenuLayer *s_edit_menu_layer;
 static SimpleMenuSection s_edit_section;
-static SimpleMenuItem s_edit_items[5];
+static SimpleMenuItem s_edit_items[6];
 
 // --- List Window ---
 static Window *s_list_window;
@@ -158,6 +158,8 @@ static void dictation_session_callback(DictationSession *session,
         dict_write_cstring(iter, MESSAGE_KEY_AppKeyEditProject, transcription);
       } else if (s_edit_mode == 4) {
         dict_write_cstring(iter, MESSAGE_KEY_AppKeyEditNote, transcription);
+      } else if (s_edit_mode == 5) {
+        dict_write_cstring(iter, MESSAGE_KEY_AppKeyAppendNote, transcription);
       }
       dict_write_cstring(iter, MESSAGE_KEY_AppKeyTaskId, s_detail_id);
       app_message_outbox_send();
@@ -248,9 +250,15 @@ static void edit_project_cb(int index, void *ctx) {
   request_list(3);
 }
 
-static void edit_desc_cb(int index, void *ctx) {
+static void edit_desc_replace_cb(int index, void *ctx) {
   s_dictation_is_rename = true;
-  s_edit_mode = 4; // 4 = Description/Note
+  s_edit_mode = 4; // 4 = Description/Note Replace
+  dictation_session_start(s_dictation_session);
+}
+
+static void edit_desc_append_cb(int index, void *ctx) {
+  s_dictation_is_rename = true;
+  s_edit_mode = 5; // 5 = Description/Note Append
   dictation_session_start(s_dictation_session);
 }
 
@@ -259,12 +267,13 @@ static void edit_window_load(Window *window) {
   s_edit_items[1] = (SimpleMenuItem){ .title = "Edit Area",    .callback = edit_area_cb };
   s_edit_items[2] = (SimpleMenuItem){ .title = "Edit Tags",    .callback = edit_tags_cb };
   s_edit_items[3] = (SimpleMenuItem){ .title = "Edit Project", .callback = edit_project_cb };
-  s_edit_items[4] = (SimpleMenuItem){ .title = "Edit Description", .callback = edit_desc_cb };
+  s_edit_items[4] = (SimpleMenuItem){ .title = "Replace Description", .callback = edit_desc_replace_cb };
+  s_edit_items[5] = (SimpleMenuItem){ .title = "Append Description", .callback = edit_desc_append_cb };
 
   s_edit_section = (SimpleMenuSection){
     .title = "Edit Task",
     .items = s_edit_items,
-    .num_items = 5
+    .num_items = 6
   };
 
   Layer *root = window_get_root_layer(window);
